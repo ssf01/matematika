@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun:*)",
+      "Bash(node --version:*)",
+      "Bash(npm --version:*)",
+      "Bash(npx astro:*)",
+      "WebSearch",
+      "Bash(git init:*)",
+      "Bash(git remote add:*)",
+      "Bash(git -C /Users/ssf01/dev/matematika status)"
+    ]
+  }
+}
