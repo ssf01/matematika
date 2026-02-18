@@ -1,6 +1,6 @@
 import type { ThemeConfig, Difficulty, Operation } from './types';
 
-export const CHAIN_LENGTH = { min: 3, max: 5 };
+export const CHAIN_LENGTH = { min: 6, max: 9 };
 
 export const DIFFICULTY_CONSTRAINTS: Record<Difficulty, { maxValue: number; allowCarry: boolean; twoDigit: boolean }> = {
   easy: { maxValue: 10, allowCarry: false, twoDigit: false },
