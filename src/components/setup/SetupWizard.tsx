@@ -75,6 +75,10 @@ export function SetupWizard() {
   };
 
   const handleMultiplicationNumberPick = (num: number) => {
+    // Quick-start skips theme selection, so set a default theme if none chosen
+    if (!store.theme) {
+      store.setTheme('space');
+    }
     store.setMultiplicationTableNumber(num);
     store.setCurrentStep('playing');
   };
