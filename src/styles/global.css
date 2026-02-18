@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --color-agent-primary: #1a1a2e;
+  --color-agent-secondary: #16213e;
+  --color-agent-accent: #e94560;
+  --color-agent-glow: #0f3460;
+
+  --color-space-primary: #0b0c2a;
+  --color-space-secondary: #1b1b4b;
+  --color-space-accent: #7b2ff7;
+  --color-space-glow: #00d4ff;
+
+  --color-treasure-primary: #2d1b00;
+  --color-treasure-secondary: #4a3000;
+  --color-treasure-accent: #ffc107;
+  --color-treasure-glow: #ff8f00;
+
+  --color-detective-primary: #1a1a1a;
+  --color-detective-secondary: #2d2d2d;
+  --color-detective-accent: #4caf50;
+  --color-detective-glow: #81c784;
+
+  --color-success: #22c55e;
+  --color-error: #ef4444;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 5px currentColor; }
+  50% { box-shadow: 0 0 20px currentColor, 0 0 40px currentColor; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes confetti-fall {
+  0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+}
+
+@keyframes digit-reveal {
+  0% { transform: scale(0) rotateY(180deg); opacity: 0; }
+  60% { transform: scale(1.2) rotateY(0deg); opacity: 1; }
+  100% { transform: scale(1) rotateY(0deg); opacity: 1; }
+}
+
+@keyframes stamp {
+  0% { transform: scale(3) rotate(-30deg); opacity: 0; }
+  50% { transform: scale(1.1) rotate(-15deg); opacity: 1; }
+  100% { transform: scale(1) rotate(-12deg); opacity: 1; }
+}
+
+.animate-shake {
+  animation: shake 0.4s ease-in-out;
+}
+
+.animate-glow {
+  animation: glow-pulse 1.5s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-confetti {
+  animation: confetti-fall 3s ease-in forwards;
+}
+
+.animate-digit-reveal {
+  animation: digit-reveal 0.6s ease-out forwards;
+}
+
+.animate-stamp {
+  animation: stamp 0.5s ease-out forwards;
+}
+
+/* Large touch targets for kids */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
