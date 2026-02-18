@@ -58,6 +58,10 @@ export function PuzzleSection({ chain, chainIndex, answers, onAnswer, isComplete
         ))}
       </div>
 
+      {chain.useLastDigit && !isCompleted && (
+        <p className="mt-2 text-xs text-white/40 italic">{t('puzzle.multiplicationHint')}</p>
+      )}
+
       {isCompleted && (
         <div className="mt-3 pt-3 border-t border-white/10 text-center">
           <span className="text-white/60 text-sm">{t('puzzle.digit')} = </span>
