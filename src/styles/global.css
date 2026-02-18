@@ -4,23 +4,23 @@
   --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-  --color-agent-primary: #1a1a2e;
-  --color-agent-secondary: #16213e;
+  --color-agent-primary: #252547;
+  --color-agent-secondary: #1e2d55;
   --color-agent-accent: #e94560;
-  --color-agent-glow: #0f3460;
+  --color-agent-glow: #1a4a80;
 
-  --color-space-primary: #0b0c2a;
-  --color-space-secondary: #1b1b4b;
+  --color-space-primary: #151640;
+  --color-space-secondary: #262668;
   --color-space-accent: #7b2ff7;
   --color-space-glow: #00d4ff;
 
-  --color-treasure-primary: #2d1b00;
-  --color-treasure-secondary: #4a3000;
+  --color-treasure-primary: #3e2b12;
+  --color-treasure-secondary: #5c4218;
   --color-treasure-accent: #ffc107;
   --color-treasure-glow: #ff8f00;
 
-  --color-detective-primary: #1a1a1a;
-  --color-detective-secondary: #2d2d2d;
+  --color-detective-primary: #262b28;
+  --color-detective-secondary: #3a403c;
   --color-detective-accent: #4caf50;
   --color-detective-glow: #81c784;
 
@@ -103,6 +103,99 @@ body {
 
 .animate-grid-pulse {
   animation: grid-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes emoji-fly {
+  0% { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-80px) scale(1.4); opacity: 0; }
+}
+
+@keyframes emoji-burst {
+  0% { transform: translate(0, 0) scale(0.5); opacity: 1; }
+  100% { transform: translate(var(--burst-x), var(--burst-y)) scale(1.5); opacity: 0; }
+}
+
+.animate-emoji-fly { animation: emoji-fly 0.8s ease-out forwards; }
+.animate-emoji-burst { animation: emoji-burst 0.7s ease-out forwards; }
+
+/* MagicUI-inspired: Shine Border */
+@keyframes shine {
+  0% { background-position: 0% 0%; }
+  50% { background-position: 100% 100%; }
+  100% { background-position: 0% 0%; }
+}
+
+.animate-shine-border {
+  position: relative;
+  overflow: visible;
+}
+.animate-shine-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background-image: radial-gradient(transparent, transparent, var(--shine-color, rgba(255,255,255,0.3)), transparent, transparent);
+  background-size: 300% 300%;
+  animation: shine 4s linear infinite;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 2px;
+  pointer-events: none;
+}
+
+/* MagicUI-inspired: Border Beam */
+@keyframes border-beam {
+  0% { offset-distance: 0%; }
+  100% { offset-distance: 100%; }
+}
+
+.border-beam-container {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid transparent;
+  mask: linear-gradient(transparent, transparent), linear-gradient(#000, #000);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  mask-clip: padding-box, border-box;
+  -webkit-mask-clip: padding-box, border-box;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.border-beam-dot {
+  position: absolute;
+  width: 60px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: linear-gradient(to left, var(--beam-from, #ffaa40), var(--beam-to, #9c40ff), transparent);
+  offset-path: rect(0 auto auto 0 round 16px);
+  animation: border-beam 4s linear infinite;
+}
+
+/* MagicUI-inspired: Shimmer slide for buttons */
+@keyframes shimmer-slide {
+  to { transform: translate(calc(100cqw - 100%), 0); }
+}
+
+@keyframes spin-around {
+  0% { transform: translateZ(0) rotate(0); }
+  15%, 35% { transform: translateZ(0) rotate(90deg); }
+  65%, 85% { transform: translateZ(0) rotate(270deg); }
+  100% { transform: translateZ(0) rotate(360deg); }
+}
+
+/* MagicUI-inspired: Sparkle */
+@keyframes sparkle {
+  0%, 100% { opacity: 0; transform: scale(0) rotate(75deg); }
+  50% { opacity: 1; transform: scale(1) rotate(120deg); }
+}
+
+/* MagicUI-inspired: Pulsating glow */
+@keyframes pulsate {
+  0%, 100% { box-shadow: 0 0 0 0 var(--pulse-color, rgba(255,255,255,0.2)); }
+  50% { box-shadow: 0 0 0 8px var(--pulse-color, rgba(255,255,255,0)); }
 }
 
 /* Large touch targets for kids */

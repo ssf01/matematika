@@ -6,6 +6,8 @@ import { useTheme } from '../themes/ThemeProvider';
 import { ProgressBar } from '../ui/ProgressBar';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
+import { ShimmerButton } from '../ui/ShimmerButton';
+import { Sparkles } from '../ui/Sparkles';
 import { validateStep } from '../../lib/validator';
 import type { Puzzle } from '../../lib/types';
 import { MetaPuzzleFlow } from './MetaPuzzleFlow';
@@ -147,14 +149,13 @@ export function PuzzleBoard({ puzzle }: PuzzleBoardProps) {
                 {getStoryText('intro')}
               </p>
             </StoryCard>
-            <Button
-              variant="primary"
-              size="lg"
+            <ShimmerButton
               onClick={handleStartAdventure}
-              className="mt-8 text-lg px-10 py-5 animate-pulse"
+              shimmerColor={theme.accentColor + '66'}
+              className="mt-8"
             >
               {t('story.next')}
-            </Button>
+            </ShimmerButton>
           </div>
         )}
 
@@ -189,20 +190,21 @@ export function PuzzleBoard({ puzzle }: PuzzleBoardProps) {
                 </p>
                 <div className="flex items-center justify-center gap-2 text-white/60">
                   <span className="text-sm">{t('puzzle.digit')} {activeChainIndex + 1} =</span>
-                  <span className="text-3xl font-bold text-green-400">
-                    {puzzle.chains[activeChainIndex].targetDigit}
-                  </span>
+                  <Sparkles color={theme.accentColor} count={5}>
+                    <span className="text-3xl font-bold text-green-400">
+                      {puzzle.chains[activeChainIndex].targetDigit}
+                    </span>
+                  </Sparkles>
                 </div>
               </div>
             </StoryCard>
-            <Button
-              variant="primary"
-              size="lg"
+            <ShimmerButton
               onClick={handleNextChain}
-              className="mt-8 text-lg px-10 py-5 animate-pulse"
+              shimmerColor={theme.accentColor + '66'}
+              className="mt-8"
             >
               {t('story.next')}
-            </Button>
+            </ShimmerButton>
           </div>
         )}
 
@@ -215,15 +217,19 @@ export function PuzzleBoard({ puzzle }: PuzzleBoardProps) {
                   {getStoryText(`complete${puzzle.chains.length}`)}
                 </p>
                 <div className="flex items-center justify-center gap-3">
-                  {puzzle.chains.map((chain, idx) => (
-                    <span
-                      key={idx}
-                      className="text-3xl font-bold text-green-400 animate-bounce"
-                      style={{ animationDelay: `${idx * 150}ms` }}
-                    >
-                      {chain.targetDigit}
+                  <Sparkles color={theme.accentColor} count={8}>
+                    <span className="flex gap-3">
+                      {puzzle.chains.map((chain, idx) => (
+                        <span
+                          key={idx}
+                          className="text-3xl font-bold text-green-400 animate-bounce"
+                          style={{ animationDelay: `${idx * 150}ms` }}
+                        >
+                          {chain.targetDigit}
+                        </span>
+                      ))}
                     </span>
-                  ))}
+                  </Sparkles>
                 </div>
               </div>
             </StoryCard>
@@ -250,6 +256,8 @@ function StoryCard({ children, emoji, themeConfig, compact, glow }: StoryCardPro
     <Card
       className={`relative overflow-hidden ${glow ? 'ring-2 ring-green-500/50' : ''}`}
       glow={glow}
+      shine={glow}
+      shineColor="rgba(34,197,94,0.4)"
     >
       <div
         className="absolute inset-0 opacity-10 pointer-events-none"

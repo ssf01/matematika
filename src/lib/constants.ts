@@ -21,7 +21,8 @@ export const THEME_CONFIGS: Record<string, ThemeConfig> = {
     glowColor: 'var(--color-agent-glow)',
     sectionLabel: 'Шифра',
     completionMessage: 'Мисија завршена! Сеф је откључан!',
-    bgPattern: 'radial-gradient(circle at 20% 50%, rgba(233,69,96,0.1) 0%, transparent 50%)',
+    bgPattern: 'radial-gradient(circle at 20% 50%, rgba(233,69,96,0.15) 0%, transparent 50%)',
+    rewardEmojis: ['🔓', '💥', '🔑', '🕶️'],
   },
   space: {
     id: 'space',
@@ -34,6 +35,7 @@ export const THEME_CONFIGS: Record<string, ThemeConfig> = {
     sectionLabel: 'Координата',
     completionMessage: 'Лансирање успешно! Ракета полеће!',
     bgPattern: 'radial-gradient(circle at 80% 20%, rgba(123,47,247,0.15) 0%, transparent 50%)',
+    rewardEmojis: ['🚀', '⭐', '💫', '🌟'],
   },
   treasure: {
     id: 'treasure',
@@ -46,6 +48,7 @@ export const THEME_CONFIGS: Record<string, ThemeConfig> = {
     sectionLabel: 'Траг',
     completionMessage: 'Благо је пронађено! Ковчег је отворен!',
     bgPattern: 'radial-gradient(circle at 50% 80%, rgba(255,193,7,0.15) 0%, transparent 50%)',
+    rewardEmojis: ['💰', '✨', '💎', '🪙'],
   },
   detective: {
     id: 'detective',
@@ -57,7 +60,8 @@ export const THEME_CONFIGS: Record<string, ThemeConfig> = {
     glowColor: 'var(--color-detective-glow)',
     sectionLabel: 'Доказ',
     completionMessage: 'Случај решен! Мистерија је откривена!',
-    bgPattern: 'radial-gradient(circle at 30% 30%, rgba(76,175,80,0.1) 0%, transparent 50%)',
+    bgPattern: 'radial-gradient(circle at 30% 30%, rgba(76,175,80,0.15) 0%, transparent 50%)',
+    rewardEmojis: ['🔍', '🔎', '🐾', '🗝️'],
   },
 };
 

@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useTheme } from '../themes/ThemeProvider';
+import { CorrectAnswerEffect } from './CorrectAnswerEffect';
 
 interface AnswerInputProps {
   onSubmit: (value: number) => boolean;
@@ -8,9 +10,11 @@ interface AnswerInputProps {
 }
 
 export function AnswerInput({ onSubmit, isCorrect, disabled, autoFocus }: AnswerInputProps) {
+  const { theme } = useTheme();
   const [value, setValue] = useState('');
   const [shaking, setShaking] = useState(false);
   const [wrongAnswer, setWrongAnswer] = useState(false);
+  const [showEffect, setShowEffect] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -30,7 +34,9 @@ export function AnswerInput({ onSubmit, isCorrect, disabled, autoFocus }: Answer
     const num = parseInt(val, 10);
     if (isNaN(num)) return;
     const correct = onSubmit(num);
-    if (!correct) {
+    if (correct) {
+      setShowEffect(true);
+    } else {
       setShaking(true);
       setWrongAnswer(true);
       setTimeout(() => {
@@ -68,10 +74,16 @@ export function AnswerInput({ onSubmit, isCorrect, disabled, autoFocus }: Answer
 
   if (isCorrect === true) {
     return (
-      <span className="inline-flex items-center justify-center w-20 h-14 rounded-lg
+      <span className="relative inline-flex items-center justify-center w-20 h-14 rounded-lg
         bg-green-500/20 border-2 border-green-500 text-green-400 text-2xl font-bold
         animate-glow" style={{ color: '#22c55e' }}>
         {value}
+        {showEffect && (
+          <CorrectAnswerEffect
+            emojis={theme.rewardEmojis}
+            onComplete={() => setShowEffect(false)}
+          />
+        )}
       </span>
     );
   }

@@ -49,6 +49,7 @@ export interface ThemeConfig {
   sectionLabel: string;
   completionMessage: string;
   bgPattern: string;
+  rewardEmojis: string[];
 }
 
 export interface GameState {
