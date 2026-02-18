@@ -8,7 +8,7 @@ import { PinInput } from './PinInput';
 import { ModePicker } from './ModePicker';
 import { Button } from '../ui/Button';
 import { ProgressBar } from '../ui/ProgressBar';
-import { generatePuzzle } from '../../lib/generator';
+import { generatePuzzle, generateMultiplicationPinPuzzle } from '../../lib/generator';
 
 const STEP_TITLES = [
   'setup.chooseTheme',
@@ -38,7 +38,6 @@ export function SetupWizard() {
     if (store.setupStep < 4) {
       store.nextSetupStep();
     } else {
-      // Start the game
       const puzzle = generatePuzzle(store.pin, store.difficulty!, store.operations);
       store.setPuzzle(puzzle);
       if (store.mode === 'print') {
@@ -51,6 +50,23 @@ export function SetupWizard() {
 
   const handleMultiplicationTable = () => {
     setShowMultiplicationPicker(true);
+  };
+
+  const handleMultiplicationPin = () => {
+    // Need PIN first - if not set, go to PIN step
+    if (store.pin.length !== 4) {
+      store.setMode('digital');
+      // Jump to PIN step
+      while (useGameStore.getState().setupStep < 3) {
+        store.nextSetupStep();
+      }
+      return;
+    }
+    // Generate multiplication-based puzzle
+    const puzzle = generateMultiplicationPinPuzzle(store.pin);
+    store.setPuzzle(puzzle);
+    store.setMode('digital');
+    store.setCurrentStep('handover');
   };
 
   const handleMultiplicationNumberPick = (num: number) => {
@@ -88,7 +104,12 @@ export function SetupWizard() {
       case 1: return <DifficultyPicker />;
       case 2: return <OperationsPicker />;
       case 3: return <PinInput />;
-      case 4: return <ModePicker onMultiplicationTable={handleMultiplicationTable} />;
+      case 4: return (
+        <ModePicker
+          onMultiplicationTable={handleMultiplicationTable}
+          onMultiplicationPin={handleMultiplicationPin}
+        />
+      );
       default: return null;
     }
   };
