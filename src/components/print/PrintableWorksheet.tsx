@@ -45,14 +45,14 @@ export function PrintableWorksheet({ puzzle }: PrintableWorksheetProps) {
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <p className="text-sm text-white/50 print:text-gray-500 mb-1">
-                      {t('print.meta.row')}
+                    <p className="font-bold text-base text-white/80 print:text-gray-800 mb-2 border-b border-white/20 print:border-gray-300 pb-1">
+                      📍 {t('print.meta.row')}
                     </p>
                     <PrintSection chain={puzzle.chains[pairIdx * 2]} chainIndex={pairIdx * 2} hideHeader footerLabel={t('print.meta.row')} chainedSteps />
                   </div>
                   <div>
-                    <p className="text-sm text-white/50 print:text-gray-500 mb-1">
-                      {t('print.meta.col')}
+                    <p className="font-bold text-base text-white/80 print:text-gray-800 mb-2 border-b border-white/20 print:border-gray-300 pb-1">
+                      📍 {t('print.meta.col')}
                     </p>
                     <PrintSection chain={puzzle.chains[pairIdx * 2 + 1]} chainIndex={pairIdx * 2 + 1} hideHeader footerLabel={t('print.meta.col')} chainedSteps />
                   </div>
