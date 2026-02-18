@@ -1,0 +1,15 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Математика - Реши задатке, откључај ТВ!">
+  <div id="app"></div>
+  <script>
+    import { createElement } from 'react';
+    import { createRoot } from 'react-dom/client';
+    import App from '../components/App';
+
+    const root = createRoot(document.getElementById('app')!);
+    root.render(createElement(App));
+  </script>
+</Layout>
