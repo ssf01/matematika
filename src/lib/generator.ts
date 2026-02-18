@@ -87,6 +87,62 @@ function tryInvert(
 }
 
 /**
+ * Generate a forward chain of two-digit math problems.
+ * Each step's result feeds into the next step's left operand.
+ * Used for hard difficulty with + and - to ensure genuinely challenging problems.
+ * The chain wanders through two-digit territory and lands on targetDigit at the end.
+ */
+function generateForwardChain(
+  targetDigit: number,
+  difficulty: Difficulty,
+  operations: Operation[],
+  chainLengthOverride?: { min: number; max: number },
+): PuzzleChain {
+  const constraints = DIFFICULTY_CONSTRAINTS[difficulty];
+  const lengths = chainLengthOverride ?? CHAIN_LENGTH;
+  const chainLength = randInt(lengths.min, lengths.max);
+  const maxVal = constraints.maxValue;
+  const steps: MathStep[] = [];
+
+  // Start with a random two-digit number
+  let current = randInt(25, 75);
+
+  for (let i = 0; i < chainLength - 1; i++) {
+    let op = operations[randInt(0, operations.length - 1)];
+
+    // Ensure we can apply the chosen op with two-digit operands and stay in range
+    const canAdd = current + 10 <= maxVal;
+    const canSub = current - 10 >= 10;
+
+    if (op === '+' && !canAdd) op = '-';
+    if (op === '-' && !canSub) op = '+';
+
+    let right: number;
+    let result: number;
+
+    if (op === '+') {
+      const maxRight = Math.min(maxVal - current, 50);
+      right = randInt(10, Math.max(10, maxRight));
+      result = current + right;
+    } else {
+      const maxRight = current - 10;
+      right = randInt(10, Math.max(10, maxRight));
+      result = current - right;
+    }
+
+    steps.push({ left: current, operator: op, right, result });
+    current = result;
+  }
+
+  // Last step: reach targetDigit via subtraction
+  // current is guaranteed >= 10 from the loop, targetDigit is 0-9
+  const lastRight = current - targetDigit;
+  steps.push({ left: current, operator: '-', right: lastRight, result: targetDigit });
+
+  return { targetDigit, steps };
+}
+
+/**
  * Generate a chain of independent math facts (not backward-chained).
  * Used when multiplication or division is in the selected operations,
  * since backward chaining doesn't work well with * and / for small targets.
@@ -118,8 +174,16 @@ function generateIndependentChain(
     steps.push(step);
   }
 
-  // Last step: result's ones digit = targetDigit
-  const lastOp = operations.includes('*') ? '*' : operations[randInt(0, operations.length - 1)];
+  // Last step: result = targetDigit (or ones digit for multiplication)
+  // For twoDigit mode, prefer subtraction since a+b=small is trivial
+  let lastOp: Operation;
+  if (operations.includes('*')) {
+    lastOp = '*';
+  } else if (constraints.twoDigit && operations.includes('-')) {
+    lastOp = '-';
+  } else {
+    lastOp = operations[randInt(0, operations.length - 1)];
+  }
   if (lastOp === '*') {
     const validPairs: [number, number][] = [];
     for (let a = 2; a <= maxFactor; a++) {
@@ -144,8 +208,27 @@ function generateIndependentChain(
       const divisor = randInt(2, maxFactor);
       steps.push({ left: targetDigit * divisor, operator: '/', right: divisor, result: targetDigit });
     }
+  } else if (lastOp === '-') {
+    // a - b = targetDigit; for twoDigit mode, ensure both operands are two-digit
+    const minA = constraints.twoDigit ? 20 : 2;
+    const a = randInt(minA, constraints.maxValue);
+    const b = a - targetDigit;
+    if (b >= 1 && b <= constraints.maxValue) {
+      steps.push({ left: a, operator: '-', right: b, result: targetDigit });
+    } else {
+      steps.push({ left: targetDigit + 1, operator: '-', right: 1, result: targetDigit });
+    }
   } else {
-    steps.push(generateRandomFact(lastOp, constraints, maxFactor));
+    // Addition: a + b = targetDigit (only works for small targets)
+    if (targetDigit >= 2) {
+      const a = randInt(1, targetDigit - 1);
+      steps.push({ left: a, operator: '+', right: targetDigit - a, result: targetDigit });
+    } else {
+      // targetDigit 0 or 1: use subtraction instead
+      const a = randInt(constraints.twoDigit ? 20 : 2, constraints.maxValue);
+      const b = a - targetDigit;
+      steps.push({ left: a, operator: '-', right: b, result: targetDigit });
+    }
   }
 
   // Mark as useLastDigit when last step is multiplication (ones digit reveals PIN digit)
@@ -161,15 +244,20 @@ function generateRandomFact(
   maxFactor: number,
 ): MathStep {
   const maxVal = constraints.maxValue;
+  const minOperand = constraints.twoDigit ? 10 : 1;
   switch (op) {
     case '+': {
-      const a = randInt(1, maxVal);
-      const b = randInt(1, maxVal - a > 0 ? maxVal - a : 1);
+      const maxA = constraints.twoDigit ? maxVal - minOperand : maxVal;
+      const a = randInt(minOperand, Math.max(minOperand, maxA));
+      const maxB = maxVal - a;
+      const b = randInt(minOperand, Math.max(minOperand, maxB));
       return { left: a, operator: '+', right: b, result: a + b };
     }
     case '-': {
-      const a = randInt(2, maxVal);
-      const b = randInt(1, a);
+      const minA = constraints.twoDigit ? minOperand + minOperand : 2;
+      const a = randInt(Math.max(minA, minOperand), maxVal);
+      const maxB = constraints.twoDigit ? a - minOperand : a;
+      const b = randInt(minOperand, Math.max(minOperand, maxB));
       return { left: a, operator: '-', right: b, result: a - b };
     }
     case '*': {
@@ -193,11 +281,14 @@ export function generateChain(
   operations: Operation[],
   chainLengthOverride?: { min: number; max: number },
 ): PuzzleChain {
-  // When multiplication or division is in the operations, use independent facts
-  // because backward chain construction doesn't work well with * and / for small targets
+  // Use independent facts for multiplication/division (backward chain doesn't work well)
   const hasMultDiv = operations.some(op => op === '*' || op === '/');
   if (hasMultDiv) {
     return generateIndependentChain(targetDigit, difficulty, operations, chainLengthOverride);
+  }
+  // Hard mode + and -: use forward chain with two-digit numbers (chained, not independent)
+  if (difficulty === 'hard' && targetDigit <= 9) {
+    return generateForwardChain(targetDigit, difficulty, operations, chainLengthOverride);
   }
 
   const constraints = DIFFICULTY_CONSTRAINTS[difficulty];
