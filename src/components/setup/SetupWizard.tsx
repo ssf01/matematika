@@ -160,6 +160,7 @@ export function SetupWizard() {
         >
           <span className="text-base">🧮</span>
           <span className="text-sm font-medium">{t('setup.multiplicationQuick')}</span>
+          <span className="text-xs text-white/30">— {t('setup.multiplicationQuickDesc')}</span>
         </button>
       )}
     </div>

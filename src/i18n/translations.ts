@@ -183,5 +183,5 @@ export const translations: Record<string, string> = {
 
   // Multiplication quick-start
   'setup.multiplicationQuick': 'Таблица множења',
-  'setup.multiplicationQuickDesc': 'Брзо вежбање',
+  'setup.multiplicationQuickDesc': 'Само вежбање, без ПИН кода',
 };
