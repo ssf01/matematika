@@ -18,6 +18,7 @@ export interface MathStep {
 export interface PuzzleChain {
   targetDigit: number;
   steps: MathStep[];
+  useLastDigit?: boolean; // true when the ones digit of the last result = target (multiplication mode)
 }
 
 export interface Puzzle {

@@ -37,8 +37,8 @@ describe('generateChain', () => {
     for (let digit = 0; digit <= 9; digit++) {
       const chain = generateChain(digit, 'easy', ['+', '-']);
       expect(chain.targetDigit).toBe(digit);
-      expect(chain.steps.length).toBeGreaterThanOrEqual(3);
-      expect(chain.steps.length).toBeLessThanOrEqual(5);
+      expect(chain.steps.length).toBeGreaterThanOrEqual(6);
+      expect(chain.steps.length).toBeLessThanOrEqual(9);
       // Last step result must equal target digit
       expect(chain.steps[chain.steps.length - 1].result).toBe(digit);
     }
@@ -110,7 +110,13 @@ describe('generateChain', () => {
     for (let digit = 1; digit <= 9; digit++) {
       const chain = generateChain(digit, 'medium', ['*', '/']);
       expect(chain.targetDigit).toBe(digit);
-      expect(chain.steps[chain.steps.length - 1].result).toBe(digit);
+      // With independent chain generation, last step's ones digit equals target
+      const lastResult = chain.steps[chain.steps.length - 1].result;
+      if (chain.useLastDigit) {
+        expect(lastResult % 10).toBe(digit);
+      } else {
+        expect(lastResult).toBe(digit);
+      }
       // All division results should be integers
       for (const step of chain.steps) {
         if (step.operator === '/') {
