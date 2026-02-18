@@ -48,8 +48,8 @@ export default function App() {
           );
         }
 
-        // Print mode
-        if (mode === 'print' && puzzle) {
+        // Print mode (standard or meta)
+        if ((mode === 'print' || mode === 'meta-print') && puzzle) {
           return (
             <ThemeProvider themeId={theme}>
               <PrintableWorksheet puzzle={puzzle} />
@@ -57,7 +57,7 @@ export default function App() {
           );
         }
 
-        // Digital mode
+        // Digital mode (standard or meta)
         if (puzzle) {
           return (
             <ThemeProvider themeId={theme}>

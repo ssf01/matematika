@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { generateChain, generatePuzzle, generateMultiplicationTable, randInt, shuffle } from './generator';
-import { DIFFICULTY_CONSTRAINTS } from './constants';
+import { generateChain, generatePuzzle, generateMultiplicationTable, generateMetaGrid, generateMetaPuzzle, randInt, shuffle } from './generator';
+import { DIFFICULTY_CONSTRAINTS, META_CHAIN_LENGTH } from './constants';
 import type { Difficulty, Operation } from './types';
 
 describe('randInt', () => {
@@ -189,5 +189,116 @@ describe('generateMultiplicationTable', () => {
   it('respects custom maxMultiplier', () => {
     const steps = generateMultiplicationTable(3, 5);
     expect(steps).toHaveLength(5);
+  });
+});
+
+describe('generateMetaGrid', () => {
+  it('returns a 10x10 grid', () => {
+    const grid = generateMetaGrid('1234');
+    expect(grid.cells).toHaveLength(10);
+    for (const row of grid.cells) {
+      expect(row).toHaveLength(10);
+    }
+  });
+
+  it('all cells contain digits 0-9', () => {
+    const grid = generateMetaGrid('5678');
+    for (const row of grid.cells) {
+      for (const cell of row) {
+        expect(cell).toBeGreaterThanOrEqual(0);
+        expect(cell).toBeLessThanOrEqual(9);
+      }
+    }
+  });
+
+  it('PIN digits are placed at the correct coordinates', () => {
+    const grid = generateMetaGrid('1234');
+    for (const coord of grid.coordinates) {
+      expect(grid.cells[coord.row][coord.col]).toBe(coord.pinDigit);
+    }
+  });
+
+  it('all coordinates are unique (no two share the same row,col)', () => {
+    const grid = generateMetaGrid('1234');
+    const seen = new Set<string>();
+    for (const coord of grid.coordinates) {
+      const key = `${coord.row},${coord.col}`;
+      expect(seen.has(key)).toBe(false);
+      seen.add(key);
+    }
+  });
+
+  it('number of coordinates equals PIN length', () => {
+    const pin = '1234';
+    const grid = generateMetaGrid(pin);
+    expect(grid.coordinates).toHaveLength(pin.length);
+  });
+});
+
+describe('generateMetaPuzzle', () => {
+  it('returns 8 chains for a 4-digit PIN (2 per digit)', () => {
+    const puzzle = generateMetaPuzzle('1234', 'easy', ['+', '-']);
+    expect(puzzle.chains).toHaveLength(8);
+  });
+
+  it('has a meta field with grid and coordinates', () => {
+    const puzzle = generateMetaPuzzle('1234', 'easy', ['+', '-']);
+    expect(puzzle.meta).toBeDefined();
+    expect(puzzle.meta!.cells).toHaveLength(10);
+    expect(puzzle.meta!.coordinates).toHaveLength(4);
+  });
+
+  it('chain pairs target correct row/col from meta coordinates', () => {
+    const puzzle = generateMetaPuzzle('1234', 'easy', ['+', '-']);
+    const meta = puzzle.meta!;
+    for (let i = 0; i < meta.coordinates.length; i++) {
+      const rowChain = puzzle.chains[i * 2];
+      const colChain = puzzle.chains[i * 2 + 1];
+      expect(rowChain.targetDigit).toBe(meta.coordinates[i].row);
+      expect(colChain.targetDigit).toBe(meta.coordinates[i].col);
+    }
+  });
+
+  it('all chains have reasonable step counts', () => {
+    // Easy +/- uses shorter chains (5-7) to avoid repetition with small numbers
+    const easyPuzzle = generateMetaPuzzle('1234', 'easy', ['+', '-']);
+    for (const chain of easyPuzzle.chains) {
+      expect(chain.steps.length).toBeGreaterThanOrEqual(5);
+      expect(chain.steps.length).toBeLessThanOrEqual(7);
+    }
+    // Hard uses full META_CHAIN_LENGTH
+    const hardPuzzle = generateMetaPuzzle('1234', 'hard', ['+', '-']);
+    for (const chain of hardPuzzle.chains) {
+      expect(chain.steps.length).toBeGreaterThanOrEqual(META_CHAIN_LENGTH.min);
+      expect(chain.steps.length).toBeLessThanOrEqual(META_CHAIN_LENGTH.max);
+    }
+  });
+
+  it('all steps are mathematically valid', () => {
+    const puzzle = generateMetaPuzzle('1234', 'medium', ['+', '-']);
+    for (const chain of puzzle.chains) {
+      for (const step of chain.steps) {
+        let expected: number;
+        switch (step.operator) {
+          case '+': expected = step.left + step.right; break;
+          case '-': expected = step.left - step.right; break;
+          case '*': expected = step.left * step.right; break;
+          case '/': expected = step.left / step.right; break;
+          default: expected = NaN;
+        }
+        expect(step.result).toBe(expected);
+      }
+    }
+  });
+
+  it('last step result equals targetDigit for + and - chains', () => {
+    // Run multiple times to catch probabilistic issues
+    for (let run = 0; run < 20; run++) {
+      const puzzle = generateMetaPuzzle('5079', 'easy', ['+', '-']);
+      for (const chain of puzzle.chains) {
+        const lastStep = chain.steps[chain.steps.length - 1];
+        expect(lastStep.result).toBe(chain.targetDigit);
+      }
+    }
   });
 });

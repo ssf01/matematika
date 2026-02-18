@@ -6,7 +6,7 @@ export type Difficulty = 'easy' | 'medium' | 'hard';
 
 export type Operation = '+' | '-' | '*' | '/';
 
-export type GameMode = 'digital' | 'print';
+export type GameMode = 'digital' | 'print' | 'meta' | 'meta-print';
 
 export interface MathStep {
   left: number;
@@ -21,9 +21,21 @@ export interface PuzzleChain {
   useLastDigit?: boolean; // true when the ones digit of the last result = target (multiplication mode)
 }
 
+export interface MetaCoordinate {
+  row: number;
+  col: number;
+  pinDigit: number;
+}
+
+export interface MetaGrid {
+  cells: number[][];
+  coordinates: MetaCoordinate[];
+}
+
 export interface Puzzle {
   pin: string;
   chains: PuzzleChain[];
+  meta?: MetaGrid;
 }
 
 export interface ThemeConfig {

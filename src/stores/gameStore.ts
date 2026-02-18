@@ -16,6 +16,8 @@ interface GameState {
   multiplicationTableNumber: number | null;
   multiplicationAnswers: Record<number, number | null>;
   multiplicationCompleted: boolean;
+  metaCoordinatesRevealed: number[];
+  metaDigitsFound: number[];
 }
 
 interface GameActions {
@@ -34,6 +36,8 @@ interface GameActions {
   setMultiplicationTableNumber: (num: number | null) => void;
   setMultiplicationAnswer: (index: number, answer: number | null) => void;
   setMultiplicationCompleted: (completed: boolean) => void;
+  markMetaCoordinateRevealed: (idx: number) => void;
+  addMetaDigitFound: (digit: number) => void;
   isAllChainsCompleted: () => boolean;
   reset: () => void;
 }
@@ -52,6 +56,8 @@ const initialState: GameState = {
   multiplicationTableNumber: null,
   multiplicationAnswers: {},
   multiplicationCompleted: false,
+  metaCoordinatesRevealed: [],
+  metaDigitsFound: [],
 };
 
 export const useGameStore = create<GameState & GameActions>()(
@@ -88,6 +94,14 @@ export const useGameStore = create<GameState & GameActions>()(
       setMultiplicationAnswer: (index, answer) =>
         set((s) => ({ multiplicationAnswers: { ...s.multiplicationAnswers, [index]: answer } })),
       setMultiplicationCompleted: (completed) => set({ multiplicationCompleted: completed }),
+      markMetaCoordinateRevealed: (idx) =>
+        set((s) => ({
+          metaCoordinatesRevealed: s.metaCoordinatesRevealed.includes(idx)
+            ? s.metaCoordinatesRevealed
+            : [...s.metaCoordinatesRevealed, idx],
+        })),
+      addMetaDigitFound: (digit) =>
+        set((s) => ({ metaDigitsFound: [...s.metaDigitsFound, digit] })),
       isAllChainsCompleted: () => get().completedChains.length >= get().pin.length,
       reset: () => set(initialState),
     }),

@@ -70,3 +70,6 @@ export const SETUP_STEPS = [
 ] as const;
 
 export const MULTIPLICATION_TABLE_RANGE = { min: 1, max: 10 };
+
+export const META_CHAIN_LENGTH = { min: 10, max: 14 };
+export const META_GRID_SIZE = 10;

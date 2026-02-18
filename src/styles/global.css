@@ -55,6 +55,11 @@ body {
   50% { transform: translateY(-10px); }
 }
 
+@keyframes grid-pulse {
+  0%, 100% { background-color: rgba(234, 179, 8, 0.2); box-shadow: 0 0 4px rgba(234, 179, 8, 0.3); }
+  50% { background-color: rgba(234, 179, 8, 0.4); box-shadow: 0 0 12px rgba(234, 179, 8, 0.5); }
+}
+
 @keyframes confetti-fall {
   0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; }
   100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
@@ -94,6 +99,10 @@ body {
 
 .animate-stamp {
   animation: stamp 0.5s ease-out forwards;
+}
+
+.animate-grid-pulse {
+  animation: grid-pulse 1.5s ease-in-out infinite;
 }
 
 /* Large touch targets for kids */

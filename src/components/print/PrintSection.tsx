@@ -14,36 +14,50 @@ interface PrintSectionProps {
   chain: PuzzleChain;
   chainIndex: number;
   showAnswers?: boolean;
+  hideHeader?: boolean;
+  footerLabel?: string;
+  chainedSteps?: boolean;
 }
 
-export function PrintSection({ chain, chainIndex, showAnswers }: PrintSectionProps) {
+export function PrintSection({ chain, chainIndex, showAnswers, hideHeader, footerLabel, chainedSteps }: PrintSectionProps) {
   const { theme } = useTheme();
   const { t } = useTranslation();
 
+  const label = footerLabel ?? t('puzzle.pinDigit');
+  const blank = (
+    <span className="inline-block w-16 border-b-2 border-white/30 print:border-gray-400 text-center">
+      &nbsp;
+    </span>
+  );
+
+  // Detect which steps are actually chained (step[i].result === step[i+1].left)
+  const isChained = (i: number) =>
+    chainedSteps && i > 0 && chain.steps[i - 1].result === chain.steps[i].left;
+
   return (
     <div className="print-section mb-6 break-inside-avoid">
-      <h3 className="font-bold text-lg mb-3 text-white/80 print:text-gray-800">
-        {t('puzzle.digit')} {chainIndex + 1}
-      </h3>
+      {!hideHeader && (
+        <h3 className="font-bold text-lg mb-3 text-white/80 print:text-gray-800">
+          {t('puzzle.digit')} {chainIndex + 1}
+        </h3>
+      )}
       <div className="space-y-2 font-mono text-xl print:text-[16pt]">
         {chain.steps.map((step, i) => (
           <div key={i} className="flex items-center gap-2">
-            <span>{step.left}</span>
+            {isChained(i) && !showAnswers ? blank : <span>{step.left}</span>}
             <span>{OP_SYMBOLS[step.operator]}</span>
             <span>{step.right}</span>
             <span>=</span>
             {showAnswers ? (
               <span className="font-bold">{step.result}</span>
             ) : (
-              <span className="inline-block w-16 border-b-2 border-white/30 print:border-gray-400 text-center">
-                &nbsp;
-              </span>
+              blank
             )}
           </div>
         ))}
       </div>
       <div className="mt-2 text-sm text-white/50 print:text-gray-500">
-        → {t('puzzle.digit')} ПИН кода:{' '}
+        → {label}:{' '}
         {showAnswers ? (
           <span className="font-bold text-lg">{chain.targetDigit}</span>
         ) : (

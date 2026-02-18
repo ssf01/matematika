@@ -1,5 +1,5 @@
-import type { Operation, Difficulty, MathStep, PuzzleChain, Puzzle } from './types';
-import { DIFFICULTY_CONSTRAINTS, CHAIN_LENGTH } from './constants';
+import type { Operation, Difficulty, MathStep, PuzzleChain, Puzzle, MetaGrid, MetaCoordinate } from './types';
+import { DIFFICULTY_CONSTRAINTS, CHAIN_LENGTH, META_CHAIN_LENGTH, META_GRID_SIZE } from './constants';
 
 export function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -96,9 +96,11 @@ function generateIndependentChain(
   targetDigit: number,
   difficulty: Difficulty,
   operations: Operation[],
+  chainLengthOverride?: { min: number; max: number },
 ): PuzzleChain {
   const constraints = DIFFICULTY_CONSTRAINTS[difficulty];
-  const chainLength = randInt(CHAIN_LENGTH.min, CHAIN_LENGTH.max);
+  const lengths = chainLengthOverride ?? CHAIN_LENGTH;
+  const chainLength = randInt(lengths.min, lengths.max);
   const steps: MathStep[] = [];
   const usedKeys = new Set<string>();
 
@@ -189,16 +191,18 @@ export function generateChain(
   targetDigit: number,
   difficulty: Difficulty,
   operations: Operation[],
+  chainLengthOverride?: { min: number; max: number },
 ): PuzzleChain {
   // When multiplication or division is in the operations, use independent facts
   // because backward chain construction doesn't work well with * and / for small targets
   const hasMultDiv = operations.some(op => op === '*' || op === '/');
   if (hasMultDiv) {
-    return generateIndependentChain(targetDigit, difficulty, operations);
+    return generateIndependentChain(targetDigit, difficulty, operations, chainLengthOverride);
   }
 
   const constraints = DIFFICULTY_CONSTRAINTS[difficulty];
-  const chainLength = randInt(CHAIN_LENGTH.min, CHAIN_LENGTH.max);
+  const lengths = chainLengthOverride ?? CHAIN_LENGTH;
+  const chainLength = randInt(lengths.min, lengths.max);
   const MAX_RETRIES = 100;
 
   for (let retry = 0; retry < MAX_RETRIES; retry++) {
@@ -231,7 +235,8 @@ export function generateChain(
           if (usedKeys.has(key)) continue;
           // Skip if we've visited this intermediate result too many times (prevents loops)
           const visitCount = visitedResults.get(inv.previousResult) || 0;
-          if (visitCount >= 2) continue;
+          const maxVisits = Math.max(2, Math.ceil(chainLength / 4));
+          if (visitCount >= maxVisits) continue;
 
           usedKeys.add(key);
           visitedResults.set(inv.previousResult, visitCount + 1);
@@ -255,6 +260,7 @@ export function generateChain(
   }
 
   // Fallback: trivial chain with variety
+  // Always adds +/- pairs so the last step's result = targetDigit
   const fb: MathStep[] = [];
   const maxVal = constraints.maxValue;
   if (targetDigit === 0) {
@@ -263,22 +269,25 @@ export function generateChain(
   } else {
     fb.push({ left: 1, operator: '+', right: targetDigit - 1, result: targetDigit });
   }
-  while (fb.length < CHAIN_LENGTH.min) {
+  const usedSteps = new Set<number>();
+  while (fb.length + 1 < lengths.min) {
     const last = fb[fb.length - 1];
-    const step = randInt(2, Math.min(maxVal - last.result, 5));
+    const maxStep = Math.min(maxVal - last.result, 8);
+    let step = randInt(2, Math.max(2, maxStep));
+    // Try to avoid repeating the same step size
+    for (let tries = 0; tries < 5 && usedSteps.has(step) && maxStep > 2; tries++) {
+      step = randInt(2, maxStep);
+    }
+    usedSteps.add(step);
     if (step > 0 && last.result + step <= maxVal) {
       fb.push({ left: last.result, operator: '+', right: step, result: last.result + step });
-      if (fb.length < CHAIN_LENGTH.min) {
-        fb.push({ left: last.result + step, operator: '-', right: step, result: last.result });
-      }
+      fb.push({ left: last.result + step, operator: '-', right: step, result: last.result });
     } else {
       fb.push({ left: last.result, operator: '+', right: 1, result: last.result + 1 });
-      if (fb.length < CHAIN_LENGTH.min) {
-        fb.push({ left: last.result + 1, operator: '-', right: 1, result: last.result });
-      }
+      fb.push({ left: last.result + 1, operator: '-', right: 1, result: last.result });
     }
   }
-  return { targetDigit, steps: fb.slice(0, CHAIN_LENGTH.max) };
+  return { targetDigit, steps: fb.slice(0, lengths.max) };
 }
 
 export function generatePuzzle(pin: string, difficulty: Difficulty, operations: Operation[]): Puzzle {
@@ -345,4 +354,61 @@ export function generateMultiplicationPinChain(targetDigit: number): PuzzleChain
 export function generateMultiplicationPinPuzzle(pin: string): Puzzle {
   const chains = pin.split('').map((d) => generateMultiplicationPinChain(parseInt(d, 10)));
   return { pin, chains };
+}
+
+export function generateMetaGrid(pin: string): MetaGrid {
+  // Create 10×10 grid filled with random digits 0-9
+  const cells: number[][] = [];
+  for (let r = 0; r < META_GRID_SIZE; r++) {
+    const row: number[] = [];
+    for (let c = 0; c < META_GRID_SIZE; c++) {
+      row.push(randInt(0, 9));
+    }
+    cells.push(row);
+  }
+
+  // Place each PIN digit at a unique random position
+  const usedPositions = new Set<string>();
+  const coordinates: MetaCoordinate[] = [];
+
+  for (const ch of pin) {
+    const pinDigit = parseInt(ch, 10);
+    let row: number, col: number;
+    do {
+      row = randInt(0, META_GRID_SIZE - 1);
+      col = randInt(0, META_GRID_SIZE - 1);
+    } while (usedPositions.has(`${row},${col}`));
+    usedPositions.add(`${row},${col}`);
+    cells[row][col] = pinDigit;
+    coordinates.push({ row, col, pinDigit });
+  }
+
+  return { cells, coordinates };
+}
+
+export function generateMetaPuzzle(
+  pin: string,
+  difficulty: Difficulty,
+  operations: Operation[],
+): Puzzle {
+  const meta = generateMetaGrid(pin);
+
+  // Shorter chains for easier difficulties to avoid repetitive problems
+  let chainLen = META_CHAIN_LENGTH;
+  if (difficulty === 'easy') {
+    chainLen = { min: 5, max: 7 };
+  } else if (difficulty === 'medium') {
+    chainLen = { min: 7, max: 10 };
+  }
+
+  // Generate 8 chains (2 per PIN digit): one targeting the row, one targeting the col
+  const chains: PuzzleChain[] = [];
+  for (const coord of meta.coordinates) {
+    const rowChain = generateChain(coord.row, difficulty, operations, chainLen);
+    const colChain = generateChain(coord.col, difficulty, operations, chainLen);
+    chains.push(rowChain);
+    chains.push(colChain);
+  }
+
+  return { pin, chains, meta };
 }

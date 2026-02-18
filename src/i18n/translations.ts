@@ -42,6 +42,7 @@ export const translations: Record<string, string> = {
   'handover.ready': 'Спреман/Спремна сам!',
 
   'puzzle.digit': 'Цифра',
+  'puzzle.pinDigit': 'Цифра ПИН кода',
   'puzzle.check': 'Провери',
   'puzzle.correct': 'Тачно!',
   'puzzle.incorrect': 'Покушај поново',
@@ -122,4 +123,65 @@ export const translations: Record<string, string> = {
   'story.next': 'Настави →',
   'story.digitProgress': 'Цифра',
   'story.of': 'од',
+
+  // Mode labels for meta
+  'mode.meta': 'Авантура',
+  'mode.metaDesc': 'Дужа игра (~30 мин) са тајном мапом',
+  'mode.metaPrint': 'Авантура штампа',
+  'mode.metaPrintDesc': 'Одштампај авантуру са тајном мапом',
+
+  // Meta grid labels
+  'meta.grid.title': 'Тајна мапа',
+  'meta.grid.row': 'Ред',
+  'meta.grid.col': 'Колона',
+  'meta.grid.floor': 'Спрат',
+  'meta.grid.room': 'Соба',
+  'meta.grid.street': 'Улица',
+  'meta.grid.house': 'Кућа',
+  'meta.grid.findDigit': 'Пронађи цифру на позицији',
+  'meta.grid.digitFound': 'Цифра пронађена!',
+  'meta.coordinatePair': 'Пар',
+
+  // Meta story - Agent theme
+  'story.agent.meta.intro': 'Агенте, добили смо тајни нацрт зграде! У њој се крије сеф са четвороцифреним кодом. Морамо дешифровати координате сваке цифре — спрат и собу.',
+  'story.agent.meta.findRow': 'Реши задатке да откријеш спрат...',
+  'story.agent.meta.findCol': 'Одлично! Сада пронађи собу...',
+  'story.agent.meta.coordinateFound': 'Координата пронађена! Спрат {row}, Соба {col}.',
+  'story.agent.meta.checkGrid': 'Погледај нацрт зграде и пронађи цифру на позицији Спрат {row}, Соба {col}!',
+  'story.agent.meta.digitFound': 'Цифра {digit} пронађена! Настављамо даље.',
+
+  // Meta story - Space theme
+  'story.space.meta.intro': 'Пилоте, примили смо координате за четири тајне звезде! Свака звезда крије једну цифру навигационог кода. Реши задатке да откријеш ред и колону сваке звезде.',
+  'story.space.meta.findRow': 'Реши задатке да откријеш ред звезде...',
+  'story.space.meta.findCol': 'Сада пронађи колону...',
+  'story.space.meta.coordinateFound': 'Координата пронађена! Ред {row}, Колона {col}.',
+  'story.space.meta.checkGrid': 'Погледај звездану карту и пронађи цифру на позицији Ред {row}, Колона {col}!',
+  'story.space.meta.digitFound': 'Цифра {digit} пронађена! Летимо даље.',
+
+  // Meta story - Treasure theme
+  'story.treasure.meta.intro': 'Стара карта са благом има мрежу од 10×10 поља! Четири тајна поља крију бројеве за закључану браву ковчега. Реши задатке да откријеш координате сваког поља.',
+  'story.treasure.meta.findRow': 'Реши задатке да откријеш ред на мапи...',
+  'story.treasure.meta.findCol': 'Одлично! Сада пронађи колону...',
+  'story.treasure.meta.coordinateFound': 'Координата пронађена! Ред {row}, Колона {col}.',
+  'story.treasure.meta.checkGrid': 'Погледај карту блага и пронађи цифру на позицији Ред {row}, Колона {col}!',
+  'story.treasure.meta.digitFound': 'Цифра {digit} пронађена! Благо је ближе.',
+
+  // Meta story - Detective theme
+  'story.detective.meta.intro': 'Детективе, нашли смо тајну карту града! Четири тајне адресе крију бројеве за шифру. Реши задатке да откријеш улицу и кућу сваке адресе.',
+  'story.detective.meta.findRow': 'Реши задатке да откријеш улицу...',
+  'story.detective.meta.findCol': 'Сада пронађи кућу...',
+  'story.detective.meta.coordinateFound': 'Координата пронађена! Улица {row}, Кућа {col}.',
+  'story.detective.meta.checkGrid': 'Погледај карту града и пронађи цифру на позицији Улица {row}, Кућа {col}!',
+  'story.detective.meta.digitFound': 'Цифра {digit} пронађена! Случај се решава.',
+
+  // Meta print
+  'print.meta.instructions': 'Реши задатке. Резултат последњег задатка у сваком сету је координата (ред или колона). Упиши координате, пронађи то поље на мапи и открој цифру ПИН кода!',
+  'print.meta.set': 'Сет',
+  'print.meta.row': 'Ред',
+  'print.meta.col': 'Колона',
+  'print.meta.answerCoordinates': 'Координате',
+
+  // Multiplication quick-start
+  'setup.multiplicationQuick': 'Таблица множења',
+  'setup.multiplicationQuickDesc': 'Брзо вежбање',
 };

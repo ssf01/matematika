@@ -8,6 +8,7 @@ import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { validateStep } from '../../lib/validator';
 import type { Puzzle } from '../../lib/types';
+import { MetaPuzzleFlow } from './MetaPuzzleFlow';
 
 interface PuzzleBoardProps {
   puzzle: Puzzle;
@@ -27,6 +28,11 @@ export function PuzzleBoard({ puzzle }: PuzzleBoardProps) {
   const [activeChainIndex, setActiveChainIndex] = useState(0);
   const [storyPhase, setStoryPhase] = useState<StoryPhase>('intro');
   const [fadeIn, setFadeIn] = useState(true);
+
+  // Meta mode: delegate to MetaPuzzleFlow
+  if (puzzle.meta) {
+    return <MetaPuzzleFlow puzzle={puzzle} />;
+  }
 
   // On mount, figure out where we left off (in case of page reload with persisted state)
   useEffect(() => {
