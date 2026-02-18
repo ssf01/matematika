@@ -10,6 +10,7 @@ import { MultiplicationTable } from './puzzle/MultiplicationTable';
 import { PrintableWorksheet } from './print/PrintableWorksheet';
 import { PinReveal } from './reveal/PinReveal';
 import { ScriptToggle } from './ui/ScriptToggle';
+import { ResetButton } from './ui/ResetButton';
 
 export default function App() {
   const currentStep = useGameStore((s) => s.currentStep);
@@ -87,6 +88,7 @@ export default function App() {
     <ScriptProvider>
       <div className="min-h-dvh">
         <ScriptToggle />
+        <ResetButton />
         {content}
       </div>
     </ScriptProvider>
