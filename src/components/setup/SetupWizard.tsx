@@ -7,7 +7,6 @@ import { OperationsPicker } from './OperationsPicker';
 import { PinInput } from './PinInput';
 import { ModePicker } from './ModePicker';
 import { Button } from '../ui/Button';
-import { ProgressBar } from '../ui/ProgressBar';
 import { generatePuzzle, generateMultiplicationPinPuzzle, generateMetaPuzzle } from '../../lib/generator';
 
 const STEP_TITLES = [
@@ -129,7 +128,29 @@ export function SetupWizard() {
         <p className="text-white/60">{t('app.subtitle')}</p>
       </div>
 
-      <ProgressBar current={store.setupStep + 1} total={5} className="mb-6 w-full" />
+      <div className="flex items-center justify-center gap-2 mb-6">
+        {STEP_TITLES.map((_, idx) => {
+          const done = idx < store.setupStep;
+          const active = idx === store.setupStep;
+          return (
+            <React.Fragment key={idx}>
+              {idx > 0 && (
+                <div className={`h-px w-6 transition-colors duration-300 ${done ? 'bg-green-500/50' : 'bg-white/10'}`} />
+              )}
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300
+                  ${done
+                    ? 'bg-green-500/25 text-green-400 ring-2 ring-green-500/50'
+                    : active
+                      ? 'bg-white/15 text-white ring-2 ring-white/40 scale-110'
+                      : 'bg-white/5 text-white/30'}`}
+              >
+                {done ? '✓' : idx + 1}
+              </div>
+            </React.Fragment>
+          );
+        })}
+      </div>
 
       <h2 className="text-xl font-semibold mb-6">{t(STEP_TITLES[store.setupStep])}</h2>
 
