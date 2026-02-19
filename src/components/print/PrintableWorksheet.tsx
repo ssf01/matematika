@@ -26,14 +26,10 @@ export function PrintableWorksheet({ puzzle }: PrintableWorksheetProps) {
         </Button>
       </div>
 
-      <PrintHeader />
+      <PrintHeader instructionKey={puzzle.meta ? 'print.meta.instructions' : undefined} />
 
       {puzzle.meta ? (
         <>
-          {/* Meta puzzle: grid + paired task sets */}
-          <p className="text-white/60 print:text-gray-600 mb-6 text-center">
-            {t('print.meta.instructions')}
-          </p>
 
           <PrintGrid grid={puzzle.meta} />
 
@@ -75,7 +71,7 @@ export function PrintableWorksheet({ puzzle }: PrintableWorksheetProps) {
             </div>
             <div className="grid grid-cols-2 gap-4 text-sm mt-4">
               {puzzle.chains.map((chain, idx) => (
-                <PrintSection key={idx} chain={chain} chainIndex={idx} showAnswers />
+                <PrintSection key={idx} chain={chain} chainIndex={idx} showAnswers footerLabel={idx % 2 === 0 ? t('print.meta.row') : t('print.meta.col')} />
               ))}
             </div>
           </div>
