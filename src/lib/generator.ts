@@ -290,27 +290,34 @@ export function generateChain(
   const hasPlusMinus = operations.some(op => op === '+' || op === '-');
   const hasMultDiv = operations.some(op => op === '*' || op === '/');
 
+  // More operations → longer chains for variety
+  const opsBonus = Math.max(0, operations.length - 2) * 2;
+  const baseLen = chainLengthOverride ?? CHAIN_LENGTH;
+  const adjustedLen = opsBonus > 0
+    ? { min: baseLen.min + opsBonus, max: baseLen.max + opsBonus }
+    : baseLen;
+
   // Pure multiplication: ones-digit chaining
   if (operations.every(op => op === '*')) {
     const maxFactor = difficulty === 'easy' ? 10 : difficulty === 'medium' ? 12 : 15;
-    return generateChainedMultiplicationChain(targetDigit, chainLengthOverride, maxFactor);
+    return generateChainedMultiplicationChain(targetDigit, adjustedLen, maxFactor);
   }
 
   // Pure division or */ without +/-: forward mult-div chain
   if (hasMultDiv && !hasPlusMinus) {
-    return generateChainedMultDivChain(targetDigit, difficulty, chainLengthOverride);
+    return generateChainedMultDivChain(targetDigit, difficulty, adjustedLen);
   }
 
   // Hard mode, pure +/-: forward chain with two-digit numbers
   if (difficulty === 'hard' && targetDigit <= 9 && !hasMultDiv) {
-    return generateForwardChain(targetDigit, difficulty, operations, chainLengthOverride);
+    return generateForwardChain(targetDigit, difficulty, operations, adjustedLen);
   }
 
   // All other cases (including mixed +/-/*/ ): backward chain
   // tryInvert handles all 4 operations; +/- are used when */ fails
 
   const constraints = DIFFICULTY_CONSTRAINTS[difficulty];
-  const lengths = chainLengthOverride ?? CHAIN_LENGTH;
+  const lengths = adjustedLen;
   const chainLength = randInt(lengths.min, lengths.max);
   const MAX_RETRIES = 100;
 
