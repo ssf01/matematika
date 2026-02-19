@@ -3,7 +3,6 @@ import { PuzzleSection } from './PuzzleSection';
 import { useGameStore } from '../../stores/gameStore';
 import { useTranslation } from '../../i18n/useTranslation';
 import { useTheme } from '../themes/ThemeProvider';
-import { ProgressBar } from '../ui/ProgressBar';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { ShimmerButton } from '../ui/ShimmerButton';
@@ -128,14 +127,25 @@ export function PuzzleBoard({ puzzle }: PuzzleBoardProps) {
 
   return (
     <div className="min-h-dvh p-4 sm:p-6 max-w-2xl mx-auto">
-      {/* Progress indicator - always visible */}
-      <div className="mb-6">
-        <ProgressBar current={completedChains.length} total={puzzle.chains.length} />
-        <p className="text-center text-white/50 text-sm mt-2">
-          {storyPhase === 'intro'
-            ? `0 / ${puzzle.chains.length}`
-            : `${t('story.digitProgress')} ${Math.min(activeChainIndex + 1, puzzle.chains.length)} ${t('story.of')} ${puzzle.chains.length}`}
-        </p>
+      {/* Step indicators */}
+      <div className="mb-6 flex items-center justify-center gap-2">
+        {puzzle.chains.map((_, idx) => {
+          const done = completedChains.includes(idx);
+          const active = storyPhase === 'solving' && idx === activeChainIndex;
+          return (
+            <div
+              key={idx}
+              className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300
+                ${done
+                  ? 'bg-green-500/25 text-green-400 ring-2 ring-green-500/50'
+                  : active
+                    ? 'bg-white/15 text-white ring-2 ring-white/40 scale-110'
+                    : 'bg-white/5 text-white/30'}`}
+            >
+              {done ? '✓' : idx + 1}
+            </div>
+          );
+        })}
       </div>
 
       {/* Story content with fade transitions */}
