@@ -154,6 +154,12 @@ function generateIndependentChain(
   operations: Operation[],
   chainLengthOverride?: { min: number; max: number },
 ): PuzzleChain {
+  // Pure multiplication: use chained ones-digit approach for all difficulties
+  if (operations.every(op => op === '*')) {
+    const maxFactor = difficulty === 'easy' ? 10 : difficulty === 'medium' ? 12 : 15;
+    return generateChainedMultiplicationChain(targetDigit, chainLengthOverride, maxFactor);
+  }
+
   const constraints = DIFFICULTY_CONSTRAINTS[difficulty];
   const lengths = chainLengthOverride ?? CHAIN_LENGTH;
   const chainLength = randInt(lengths.min, lengths.max);
@@ -281,15 +287,27 @@ export function generateChain(
   operations: Operation[],
   chainLengthOverride?: { min: number; max: number },
 ): PuzzleChain {
-  // Use independent facts for multiplication/division (backward chain doesn't work well)
+  const hasPlusMinus = operations.some(op => op === '+' || op === '-');
   const hasMultDiv = operations.some(op => op === '*' || op === '/');
-  if (hasMultDiv) {
-    return generateIndependentChain(targetDigit, difficulty, operations, chainLengthOverride);
+
+  // Pure multiplication: ones-digit chaining
+  if (operations.every(op => op === '*')) {
+    const maxFactor = difficulty === 'easy' ? 10 : difficulty === 'medium' ? 12 : 15;
+    return generateChainedMultiplicationChain(targetDigit, chainLengthOverride, maxFactor);
   }
-  // Hard mode + and -: use forward chain with two-digit numbers (chained, not independent)
-  if (difficulty === 'hard' && targetDigit <= 9) {
+
+  // Pure division or */ without +/-: forward mult-div chain
+  if (hasMultDiv && !hasPlusMinus) {
+    return generateChainedMultDivChain(targetDigit, difficulty, chainLengthOverride);
+  }
+
+  // Hard mode, pure +/-: forward chain with two-digit numbers
+  if (difficulty === 'hard' && targetDigit <= 9 && !hasMultDiv) {
     return generateForwardChain(targetDigit, difficulty, operations, chainLengthOverride);
   }
+
+  // All other cases (including mixed +/-/*/ ): backward chain
+  // tryInvert handles all 4 operations; +/- are used when */ fails
 
   const constraints = DIFFICULTY_CONSTRAINTS[difficulty];
   const lengths = chainLengthOverride ?? CHAIN_LENGTH;
@@ -394,52 +412,182 @@ export function generateMultiplicationTable(number: number, maxMultiplier: numbe
   return shuffle(steps);
 }
 
-/**
- * Generate a PIN puzzle using multiplication facts.
- * For each PIN digit, generates a chain of multiplication problems
- * where the child must solve them sequentially. The last answer's
- * ones digit (answer % 10) reveals the PIN digit.
- *
- * Example for PIN digit 7:
- *   3 × 4 = 12, 6 × 2 = 12, 8 × 3 = 24, 9 × 3 = 27 → ones digit = 7
- */
-export function generateMultiplicationPinChain(targetDigit: number): PuzzleChain {
-  const steps: MathStep[] = [];
-  const numSteps = randInt(6, 8);
+// Generate a chained forward chain alternating × and ÷ with full result carrying.
+// Used for pure ÷ or mixed ×÷ operations where backward chaining with +/- isn't available.
+// Builds backward from targetDigit, alternating ÷ and × inversions to stay bounded.
+// Forward reading example (target 7): 8 × 6 = 48 → 48 ÷ 6 = 8 → 8 × 7 = 56 → 56 ÷ 8 = 7
+function generateChainedMultDivChain(
+  targetDigit: number,
+  difficulty: Difficulty,
+  chainLengthOverride?: { min: number; max: number },
+): PuzzleChain {
+  const maxFactor = difficulty === 'easy' ? 10 : difficulty === 'medium' ? 12 : 15;
+  const lengths = chainLengthOverride ?? CHAIN_LENGTH;
+  const chainLength = randInt(lengths.min, lengths.max);
+  const maxIntermediate = 200;
+  const MAX_RETRIES = 100;
 
-  // Generate random multiplication facts for most steps
-  for (let i = 0; i < numSteps - 1; i++) {
-    const a = randInt(2, 9);
-    const b = randInt(2, 9);
-    steps.push({ left: a, operator: '*', right: b, result: a * b });
+  // target 0 can't be chained with *// (0 * anything = 0, dead end)
+  // Fall back to onesDigit multiplication chain
+  if (targetDigit === 0) {
+    return generateChainedMultiplicationChain(targetDigit, chainLengthOverride, maxFactor);
   }
 
-  // Last step: find a × b where (a × b) % 10 === targetDigit
-  const validPairs: [number, number][] = [];
-  for (let a = 2; a <= 9; a++) {
-    for (let b = 2; b <= 9; b++) {
-      if ((a * b) % 10 === targetDigit) {
-        validPairs.push([a, b]);
+  for (let retry = 0; retry < MAX_RETRIES; retry++) {
+    const steps: MathStep[] = [];
+    let current = targetDigit;
+    let failed = false;
+    const usedKeys = new Set<string>();
+
+    for (let i = 0; i < chainLength; i++) {
+      // Alternate: / then * (backward), reads as * then / (forward)
+      const useDiv = (i % 2 === 0);
+
+      if (useDiv) {
+        // / inversion: forward step is "prev ÷ right = current"
+        const validRights: number[] = [];
+        for (let r = 2; r <= maxFactor; r++) {
+          if (current * r <= maxIntermediate && !usedKeys.has(`${current * r}/${r}`)) {
+            validRights.push(r);
+          }
+        }
+        if (validRights.length === 0) { failed = true; break; }
+        const right = validRights[randInt(0, validRights.length - 1)];
+        const prev = current * right;
+        steps.unshift({ left: prev, operator: '/', right, result: current });
+        usedKeys.add(`${prev}/${right}`);
+        current = prev;
+      } else {
+        // * inversion: forward step is "prev × right = current"
+        const validRights: number[] = [];
+        for (let r = 2; r <= Math.min(maxFactor, current); r++) {
+          if (current % r === 0 && !usedKeys.has(`${current / r}*${r}`)) {
+            validRights.push(r);
+          }
+        }
+        if (validRights.length === 0) { failed = true; break; }
+        const right = validRights[randInt(0, validRights.length - 1)];
+        const prev = current / right;
+        steps.unshift({ left: prev, operator: '*', right, result: current });
+        usedKeys.add(`${prev}*${right}`);
+        current = prev;
       }
     }
+
+    if (failed) continue;
+
+    return { targetDigit, steps, chainMode: 'full' };
   }
 
+  // Fallback: onesDigit multiplication chain
+  return generateChainedMultiplicationChain(targetDigit, chainLengthOverride, maxFactor);
+}
+
+/**
+ * Generate a chained multiplication chain where the ones digit of each
+ * result becomes the left operand of the next step. The ones digit of
+ * the final result equals the target PIN digit.
+ *
+ * Example for target digit 7:
+ *   3 × 9 = 27   (ones digit: 7)
+ *   7 × 4 = 28   (ones digit: 8)
+ *   8 × 6 = 48   (ones digit: 8)
+ *   8 × 9 = 72   (ones digit: 2)
+ *   2 × 9 = 18   (ones digit: 8)
+ *   8 × 4 = 32   (ones digit: 2)
+ *   2 × 6 = 12   (ones digit: 2)
+ *   → cifra jedinice poslednjeg = 2? Ne, treba 7...
+ *
+ * Algorithm builds backward from targetDigit to ensure correctness.
+ * Intermediate carried digits avoid {0, 1, 5} to prevent dead ends.
+ */
+function generateChainedMultiplicationChain(
+  targetDigit: number,
+  chainLengthOverride?: { min: number; max: number },
+  maxFactor?: number,
+): PuzzleChain {
+  const SAFE_DIGITS = [2, 3, 4, 6, 7, 8, 9];
+  const lengths = chainLengthOverride ?? { min: 6, max: 8 };
+  const numSteps = randInt(lengths.min, lengths.max);
+  const maxRight = maxFactor ?? 9;
+
+  function findPairs(targetOnes: number, leftPool: number[]): [number, number][] {
+    const pairs: [number, number][] = [];
+    for (const a of leftPool) {
+      for (let b = 2; b <= maxRight; b++) {
+        if ((a * b) % 10 === targetOnes) pairs.push([a, b]);
+      }
+    }
+    return pairs;
+  }
+
+  const MAX_RETRIES = 50;
+
+  for (let retry = 0; retry < MAX_RETRIES; retry++) {
+    const steps: MathStep[] = [];
+    let currentTarget = targetDigit;
+    let failed = false;
+    const usedPairs = new Set<string>();
+
+    for (let i = numSteps - 1; i >= 0; i--) {
+      const isFirst = i === 0;
+      const leftPool = isFirst
+        ? Array.from({ length: maxRight - 1 }, (_, k) => k + 2)
+        : SAFE_DIGITS;
+
+      let pairs = findPairs(currentTarget, leftPool);
+      // Prefer unused pairs for variety
+      const freshPairs = pairs.filter(([a, b]) => !usedPairs.has(`${a}x${b}`));
+      if (freshPairs.length > 0) pairs = freshPairs;
+
+      if (pairs.length === 0) { failed = true; break; }
+
+      const [left, right] = pairs[randInt(0, pairs.length - 1)];
+      usedPairs.add(`${left}x${right}`);
+
+      steps.unshift({
+        left,
+        operator: '*',
+        right,
+        result: left * right,
+      });
+
+      currentTarget = left;
+    }
+
+    if (failed) continue;
+
+    return { targetDigit, steps, useLastDigit: true, chainMode: 'onesDigit' };
+  }
+
+  // Fallback: non-chained multiplication (should rarely happen)
+  const steps: MathStep[] = [];
+  const fallbackLen = randInt(lengths.min, lengths.max);
+  for (let i = 0; i < fallbackLen - 1; i++) {
+    const a = randInt(2, maxRight);
+    const b = randInt(2, maxRight);
+    steps.push({ left: a, operator: '*', right: b, result: a * b });
+  }
+  const validPairs: [number, number][] = [];
+  for (let a = 2; a <= maxRight; a++) {
+    for (let b = 2; b <= maxRight; b++) {
+      if ((a * b) % 10 === targetDigit) validPairs.push([a, b]);
+    }
+  }
   if (validPairs.length > 0) {
     const [a, b] = validPairs[randInt(0, validPairs.length - 1)];
     steps.push({ left: a, operator: '*', right: b, result: a * b });
-  } else {
-    // Fallback for digit 0: any number × 10, or use 2×5=10, 4×5=20, etc.
-    const multOf10: [number, number][] = [];
-    for (let a = 2; a <= 9; a++) {
-      for (let b = 2; b <= 9; b++) {
-        if ((a * b) % 10 === 0) multOf10.push([a, b]);
-      }
-    }
-    const [a, b] = multOf10[randInt(0, multOf10.length - 1)];
-    steps.push({ left: a, operator: '*', right: b, result: a * b });
   }
-
   return { targetDigit, steps, useLastDigit: true };
+}
+
+/**
+ * Generate a PIN puzzle using chained multiplication facts.
+ * Each step's ones digit feeds into the next step's left operand.
+ * The last answer's ones digit reveals the PIN digit.
+ */
+export function generateMultiplicationPinChain(targetDigit: number): PuzzleChain {
+  return generateChainedMultiplicationChain(targetDigit);
 }
 
 export function generateMultiplicationPinPuzzle(pin: string): Puzzle {

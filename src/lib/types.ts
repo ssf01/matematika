@@ -19,6 +19,7 @@ export interface PuzzleChain {
   targetDigit: number;
   steps: MathStep[];
   useLastDigit?: boolean; // true when the ones digit of the last result = target (multiplication mode)
+  chainMode?: 'full' | 'onesDigit'; // 'full' = result carries over (default), 'onesDigit' = ones digit carries over (multiplication)
 }
 
 export interface MetaCoordinate {
