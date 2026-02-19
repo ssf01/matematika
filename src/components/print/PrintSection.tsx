@@ -30,9 +30,15 @@ export function PrintSection({ chain, chainIndex, showAnswers, hideHeader, foote
     </span>
   );
 
-  // Detect which steps are actually chained (step[i].result === step[i+1].left)
-  const isChained = (i: number) =>
-    chainedSteps && i > 0 && chain.steps[i - 1].result === chain.steps[i].left;
+  // Detect which steps are actually chained
+  const isChained = (i: number) => {
+    if (!chainedSteps || i === 0) return false;
+    const prevResult = chain.steps[i - 1].result;
+    if (chain.chainMode === 'onesDigit') {
+      return prevResult % 10 === chain.steps[i].left;
+    }
+    return prevResult === chain.steps[i].left;
+  };
 
   return (
     <div className="print-section mb-6 break-inside-avoid">
@@ -40,6 +46,16 @@ export function PrintSection({ chain, chainIndex, showAnswers, hideHeader, foote
         <h3 className="font-bold text-lg mb-3 text-white/80 print:text-gray-800">
           {t('puzzle.digit')} {chainIndex + 1}
         </h3>
+      )}
+      {chain.chainMode === 'onesDigit' && !showAnswers && (
+        <div className="text-xs text-white/50 print:text-gray-500 italic mb-2">
+          <p>{t('print.onesDigitInstruction')}</p>
+          <div className="flex items-center gap-1 mt-1 font-mono not-italic text-[10px]">
+            <span>3 × 9 = 2<span className="font-bold underline text-white/70 print:text-gray-700">7</span></span>
+            <span className="mx-1">→</span>
+            <span><span className="font-bold underline text-white/70 print:text-gray-700">7</span> × 4 = ...</span>
+          </div>
+        </div>
       )}
       <div className="space-y-2 font-mono text-xl print:text-[16pt]">
         {chain.steps.map((step, i) => (

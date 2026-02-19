@@ -58,6 +58,7 @@ export const translations: Record<string, string> = {
   'print.title': 'Математички задаци',
   'print.instructions': 'Реши све задатке. Последња цифра сваког низа је цифра ПИН кода!',
   'puzzle.multiplicationHint': 'Последња цифра резултата је цифра ПИН кода!',
+  'print.onesDigitInstruction': 'Цифру јединице резултата пренеси у следећи ред као први број.',
   'print.answerKey': 'Решења (само за родитеље)',
   'print.print': 'Штампај',
   'print.back': 'Назад',
