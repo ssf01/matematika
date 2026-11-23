@@ -108,7 +108,7 @@ GitHub Actions (`.github/workflows/ci.yml`) na svaki push/PR ka `main` pokreće:
 - **Vitest 5** + Testing Library — testovi
 - **ESLint 9** (typescript-eslint, react-hooks, jsx-a11y) — linting
 - **Bun** — package manager i runtime
-- **TypeScript** (strict) — type safety
+- **TypeScript 6** (strict) — type safety
 
 ## Struktura projekta
 
