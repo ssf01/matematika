@@ -1,27 +1,76 @@
 ---
+import '../styles/global.css';
+import '../styles/print.css';
+
 interface Props {
   title?: string;
+  description?: string;
 }
 
-const { title = 'Математика' } = Astro.props;
+const {
+  title = 'Математика',
+  description = 'Забавна математичка игра за децу: реши задатке, откриј PIN код и откључај ТВ! Сабирање, одузимање, множење и дељење — дигитално или за штампу.',
+} = Astro.props;
+
+// og:image / canonical need an absolute URL, which requires `site` in astro.config.mjs.
+const ogImage = Astro.site ? new URL('/icon-512.png', Astro.site).href : undefined;
+const canonical = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : undefined;
+const themeColor = '#030712'; // tailwind gray-950, matches body background
 ---
 
 <!doctype html>
 <html lang="sr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Забавна математичка игра за децу - реши задатке и откључај ТВ!" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>{title}</title>
-    <script defer src="https://stats.uikraft.com/script.js" data-website-id="e570d67b-46ce-4471-ada7-42965f9767f2"></script>
+    <meta name="description" content={description} />
+    {canonical && <link rel="canonical" href={canonical} />}
+
+    <!-- Open Graph / social -->
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="sr_RS" />
+    <meta property="og:site_name" content="Математика" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    {canonical && <meta property="og:url" content={canonical} />}
+    {ogImage && <meta property="og:image" content={ogImage} />}
+    <meta name="twitter:card" content="summary" />
+
+    <!-- Icons & PWA -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content={themeColor} />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Математика" />
+
+    <!-- Privacy-friendly, cookie-less analytics (see README → Privatnost). Never cached by the SW. -->
+    <script
+      is:inline
+      defer
+      src="https://stats.uikraft.com/script.js"
+      data-website-id="e570d67b-46ce-4471-ada7-42965f9767f2"></script>
+
+    {
+      import.meta.env.PROD && (
+        <script is:inline>
+          if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+              navigator.serviceWorker.register('/sw.js').catch(function (err) {
+                console.warn('Service worker registration failed', err);
+              });
+            });
+          }
+        </script>
+      )
+    }
   </head>
   <body class="min-h-dvh bg-gray-950 text-white antialiased">
     <slot />
   </body>
 </html>
-
-<style>
-  @import '../styles/global.css';
-  @import '../styles/print.css';
-</style>
