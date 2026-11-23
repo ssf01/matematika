@@ -1,48 +1,59 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Theme, Difficulty, Operation, GameMode, Puzzle } from '../lib/types';
+import type { Theme, Difficulty, Operation, GameMode, Puzzle, MathStep } from '../lib/types';
 
-interface GameState {
+export type GameStep = 'setup' | 'handover' | 'playing' | 'reveal';
+
+export interface MultiplicationTableState {
+  number: number;
+  steps: MathStep[];
+  answers: Record<number, string>;
+  checked: boolean;
+}
+
+/** The single source of truth for persisted game state. */
+export interface GameState {
   pin: string;
   theme: Theme | null;
   difficulty: Difficulty | null;
   operations: Operation[];
   mode: GameMode | null;
   puzzle: Puzzle | null;
-  currentStep: 'setup' | 'handover' | 'playing' | 'reveal';
+  currentStep: GameStep;
   setupStep: number;
+  /** Correct answers keyed by `${chainIdx}-${stepIdx}`. */
   answers: Record<string, number | null>;
   completedChains: number[];
   multiplicationTableNumber: number | null;
-  multiplicationAnswers: Record<number, number | null>;
-  multiplicationCompleted: boolean;
+  multiplicationTable: MultiplicationTableState | null;
+  /** Indexes into puzzle.meta.coordinates, in the order they were found. */
   metaCoordinatesRevealed: number[];
-  metaDigitsFound: number[];
 }
 
-interface GameActions {
+export interface GameActions {
   setTheme: (theme: Theme) => void;
   setDifficulty: (difficulty: Difficulty) => void;
-  setOperations: (operations: Operation[]) => void;
   toggleOperation: (op: Operation) => void;
   setPin: (pin: string) => void;
   setMode: (mode: GameMode) => void;
   setPuzzle: (puzzle: Puzzle) => void;
-  setCurrentStep: (step: GameState['currentStep']) => void;
+  setCurrentStep: (step: GameStep) => void;
   nextSetupStep: () => void;
   prevSetupStep: () => void;
   setAnswer: (chainIdx: number, stepIdx: number, answer: number | null) => void;
   markChainCompleted: (chainIdx: number) => void;
   setMultiplicationTableNumber: (num: number | null) => void;
-  setMultiplicationAnswer: (index: number, answer: number | null) => void;
-  setMultiplicationCompleted: (completed: boolean) => void;
-  markMetaCoordinateRevealed: (idx: number) => void;
-  addMetaDigitFound: (digit: number) => void;
-  isAllChainsCompleted: () => boolean;
+  setMultiplicationTable: (table: MultiplicationTableState | null) => void;
+  /** Idempotent: revealing the same coordinate twice has no effect. */
+  revealMetaCoordinate: (idx: number) => void;
   reset: () => void;
 }
 
-const initialState: GameState = {
+export const MAX_SETUP_STEP = 4;
+export const STORE_VERSION = 1;
+export const STORE_NAME = 'matematika-game';
+
+export const initialState: GameState = {
   pin: '',
   theme: null,
   difficulty: null,
@@ -54,10 +65,8 @@ const initialState: GameState = {
   answers: {},
   completedChains: [],
   multiplicationTableNumber: null,
-  multiplicationAnswers: {},
-  multiplicationCompleted: false,
+  multiplicationTable: null,
   metaCoordinatesRevealed: [],
-  metaDigitsFound: [],
 };
 
 export const useGameStore = create<GameState & GameActions>()(
@@ -67,7 +76,6 @@ export const useGameStore = create<GameState & GameActions>()(
 
       setTheme: (theme) => set({ theme }),
       setDifficulty: (difficulty) => set({ difficulty }),
-      setOperations: (operations) => set({ operations }),
       toggleOperation: (op) => {
         const current = get().operations;
         if (current.includes(op)) {
@@ -78,36 +86,58 @@ export const useGameStore = create<GameState & GameActions>()(
       },
       setPin: (pin) => set({ pin }),
       setMode: (mode) => set({ mode }),
-      setPuzzle: (puzzle) => set({ puzzle }),
+      setPuzzle: (puzzle) =>
+        set({ puzzle, answers: {}, completedChains: [], metaCoordinatesRevealed: [] }),
       setCurrentStep: (step) => set({ currentStep: step }),
-      nextSetupStep: () => set((s) => ({ setupStep: Math.min(s.setupStep + 1, 4) })),
+      nextSetupStep: () => set((s) => ({ setupStep: Math.min(s.setupStep + 1, MAX_SETUP_STEP) })),
       prevSetupStep: () => set((s) => ({ setupStep: Math.max(s.setupStep - 1, 0) })),
       setAnswer: (chainIdx, stepIdx, answer) =>
         set((s) => ({ answers: { ...s.answers, [`${chainIdx}-${stepIdx}`]: answer } })),
       markChainCompleted: (chainIdx) =>
-        set((s) => ({
-          completedChains: s.completedChains.includes(chainIdx)
-            ? s.completedChains
-            : [...s.completedChains, chainIdx],
-        })),
+        set((s) =>
+          s.completedChains.includes(chainIdx)
+            ? s
+            : { completedChains: [...s.completedChains, chainIdx] },
+        ),
       setMultiplicationTableNumber: (num) => set({ multiplicationTableNumber: num }),
-      setMultiplicationAnswer: (index, answer) =>
-        set((s) => ({ multiplicationAnswers: { ...s.multiplicationAnswers, [index]: answer } })),
-      setMultiplicationCompleted: (completed) => set({ multiplicationCompleted: completed }),
-      markMetaCoordinateRevealed: (idx) =>
-        set((s) => ({
-          metaCoordinatesRevealed: s.metaCoordinatesRevealed.includes(idx)
-            ? s.metaCoordinatesRevealed
-            : [...s.metaCoordinatesRevealed, idx],
-        })),
-      addMetaDigitFound: (digit) =>
-        set((s) => ({ metaDigitsFound: [...s.metaDigitsFound, digit] })),
-      isAllChainsCompleted: () => get().completedChains.length >= get().pin.length,
-      reset: () => set(initialState),
+      setMultiplicationTable: (table) => set({ multiplicationTable: table }),
+      revealMetaCoordinate: (idx) =>
+        set((s) =>
+          s.metaCoordinatesRevealed.includes(idx)
+            ? s
+            : { metaCoordinatesRevealed: [...s.metaCoordinatesRevealed, idx] },
+        ),
+      reset: () => set({ ...initialState }),
     }),
     {
-      name: 'matematika-game',
+      name: STORE_NAME,
+      version: STORE_VERSION,
       storage: createJSONStorage(() => sessionStorage),
+      partialize: (s): GameState => ({
+        pin: s.pin,
+        theme: s.theme,
+        difficulty: s.difficulty,
+        operations: s.operations,
+        mode: s.mode,
+        puzzle: s.puzzle,
+        currentStep: s.currentStep,
+        setupStep: s.setupStep,
+        answers: s.answers,
+        completedChains: s.completedChains,
+        multiplicationTableNumber: s.multiplicationTableNumber,
+        multiplicationTable: s.multiplicationTable,
+        metaCoordinatesRevealed: s.metaCoordinatesRevealed,
+      }),
+      // Any state saved under a different schema version is discarded.
+      migrate: () => ({ ...initialState }),
     },
   ),
 );
+
+/** Digits found so far in meta mode, in PIN order of discovery. */
+export function selectMetaDigitsFound(s: Pick<GameState, 'puzzle' | 'metaCoordinatesRevealed'>): number[] {
+  const coords = s.puzzle?.meta?.coordinates ?? [];
+  return s.metaCoordinatesRevealed
+    .filter((i) => i >= 0 && i < coords.length)
+    .map((i) => coords[i].pinDigit);
+}

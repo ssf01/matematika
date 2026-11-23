@@ -1,4 +1,3 @@
-import React from 'react';
 import { useGameStore } from '../../stores/gameStore';
 import { useTranslation } from '../../i18n/useTranslation';
 import type { Operation } from '../../lib/types';
@@ -8,7 +7,7 @@ const ops: { id: Operation; symbol: string; key: string }[] = [
   { id: '+', symbol: '+', key: 'operation.add' },
   { id: '-', symbol: '−', key: 'operation.subtract' },
   { id: '*', symbol: '×', key: 'operation.multiply' },
-  { id: '/', symbol: '÷', key: 'operation.divide' },
+  { id: '/', symbol: ':', key: 'operation.divide' },
 ];
 
 export function OperationsPicker() {

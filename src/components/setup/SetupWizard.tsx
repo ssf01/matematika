@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useGameStore } from '../../stores/gameStore';
+import { Fragment, useState } from 'react';
+import { useGameStore, MAX_SETUP_STEP } from '../../stores/gameStore';
 import { useTranslation } from '../../i18n/useTranslation';
 import { ThemePicker } from './ThemePicker';
 import { DifficultyPicker } from './DifficultyPicker';
@@ -8,6 +8,7 @@ import { PinInput } from './PinInput';
 import { ModePicker } from './ModePicker';
 import { Button } from '../ui/Button';
 import { generatePuzzle, generateMultiplicationPinPuzzle, generateMetaPuzzle } from '../../lib/generator';
+import type { Difficulty, GameMode, Operation, Puzzle } from '../../lib/types';
 
 const STEP_TITLES = [
   'setup.chooseTheme',
@@ -16,6 +17,27 @@ const STEP_TITLES = [
   'setup.enterPin',
   'setup.chooseMode',
 ] as const;
+
+export function isPrintMode(mode: GameMode): boolean {
+  return mode === 'print' || mode === 'meta-print';
+}
+
+export function buildPuzzle(
+  mode: GameMode,
+  pin: string,
+  difficulty: Difficulty,
+  operations: Operation[],
+): Puzzle {
+  switch (mode) {
+    case 'meta':
+    case 'meta-print':
+      return generateMetaPuzzle(pin, difficulty, operations);
+    case 'multiplication-pin':
+      return generateMultiplicationPinPuzzle(pin);
+    default:
+      return generatePuzzle(pin, difficulty, operations);
+  }
+}
 
 export function SetupWizard() {
   const { t } = useTranslation();
@@ -27,50 +49,21 @@ export function SetupWizard() {
       case 0: return store.theme !== null;
       case 1: return store.difficulty !== null;
       case 2: return store.operations.length > 0;
-      case 3: return store.pin.length === 4;
+      case 3: return /^\d{4}$/.test(store.pin);
       case 4: return store.mode !== null;
       default: return false;
     }
   };
 
   const handleNext = () => {
-    if (store.setupStep < 4) {
+    if (!canAdvance()) return;
+    if (store.setupStep < MAX_SETUP_STEP) {
       store.nextSetupStep();
-    } else {
-      let puzzle;
-      if (store.mode === 'meta' || store.mode === 'meta-print') {
-        puzzle = generateMetaPuzzle(store.pin, store.difficulty!, store.operations);
-      } else {
-        puzzle = generatePuzzle(store.pin, store.difficulty!, store.operations);
-      }
-      store.setPuzzle(puzzle);
-      if (store.mode === 'print' || store.mode === 'meta-print') {
-        store.setCurrentStep('playing');
-      } else {
-        store.setCurrentStep('handover');
-      }
-    }
-  };
-
-  const handleMultiplicationTable = () => {
-    setShowMultiplicationPicker(true);
-  };
-
-  const handleMultiplicationPin = () => {
-    // Need PIN first - if not set, go to PIN step
-    if (store.pin.length !== 4) {
-      store.setMode('digital');
-      // Jump to PIN step
-      while (useGameStore.getState().setupStep < 3) {
-        store.nextSetupStep();
-      }
       return;
     }
-    // Generate multiplication-based puzzle
-    const puzzle = generateMultiplicationPinPuzzle(store.pin);
+    const puzzle = buildPuzzle(store.mode!, store.pin, store.difficulty!, store.operations);
     store.setPuzzle(puzzle);
-    store.setMode('digital');
-    store.setCurrentStep('handover');
+    store.setCurrentStep(isPrintMode(store.mode!) ? 'playing' : 'handover');
   };
 
   const handleMultiplicationNumberPick = (num: number) => {
@@ -112,11 +105,7 @@ export function SetupWizard() {
       case 1: return <DifficultyPicker />;
       case 2: return <OperationsPicker />;
       case 3: return <PinInput />;
-      case 4: return (
-        <ModePicker
-          onMultiplicationPin={handleMultiplicationPin}
-        />
-      );
+      case 4: return <ModePicker />;
       default: return null;
     }
   };
@@ -133,7 +122,7 @@ export function SetupWizard() {
           const done = idx < store.setupStep;
           const active = idx === store.setupStep;
           return (
-            <React.Fragment key={idx}>
+            <Fragment key={idx}>
               {idx > 0 && (
                 <div className={`h-px w-6 transition-colors duration-300 ${done ? 'bg-green-500/50' : 'bg-white/10'}`} />
               )}
@@ -147,7 +136,7 @@ export function SetupWizard() {
               >
                 {done ? '✓' : idx + 1}
               </div>
-            </React.Fragment>
+            </Fragment>
           );
         })}
       </div>
@@ -168,13 +157,13 @@ export function SetupWizard() {
           disabled={!canAdvance()}
           className="flex-1"
         >
-          {store.setupStep === 4 ? t('setup.start') : t('setup.next')}
+          {store.setupStep === MAX_SETUP_STEP ? t('setup.start') : t('setup.next')}
         </Button>
       </div>
 
       {store.setupStep === 0 && (
         <button
-          onClick={handleMultiplicationTable}
+          onClick={() => setShowMultiplicationPicker(true)}
           className="mt-6 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg
             bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20
             transition-all duration-200 text-white/50 hover:text-white/80"

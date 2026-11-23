@@ -1,4 +1,3 @@
-import React, { useEffect, useState } from 'react';
 import { useGameStore } from '../stores/gameStore';
 import { ScriptProvider } from '../i18n/ScriptContext';
 import { ThemeProvider } from './themes/ThemeProvider';

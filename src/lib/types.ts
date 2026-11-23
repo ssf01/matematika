@@ -6,7 +6,7 @@ export type Difficulty = 'easy' | 'medium' | 'hard';
 
 export type Operation = '+' | '-' | '*' | '/';
 
-export type GameMode = 'digital' | 'print' | 'meta' | 'meta-print';
+export type GameMode = 'digital' | 'print' | 'meta' | 'meta-print' | 'multiplication-pin';
 
 export interface MathStep {
   left: number;
