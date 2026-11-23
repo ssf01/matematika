@@ -112,7 +112,7 @@ export function MetaGrid({ grid, activeCoordinate, revealedCoordinates, onCellCl
                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70
                       ${revealed ? 'bg-green-500/20 text-green-400 font-bold border-green-500/30' : ''}
                       ${isWrong ? 'bg-red-500/30 text-red-400 border-red-500/50 animate-shake' : ''}
-                      ${!revealed && !isWrong ? 'text-white/70 hover:bg-white/10' : ''}
+                      ${!revealed && !isWrong ? 'bg-white/5 text-white/80 hover:bg-white/15' : ''}
                       ${onCellClick ? 'cursor-pointer' : 'cursor-default'}`}
                   >
                     {cell}

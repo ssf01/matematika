@@ -27,7 +27,7 @@ export function ModePicker() {
         <div key={id} data-mode={id}>
           <Card selected={mode === id} onClick={() => setMode(id)}>
             <div className="flex items-center gap-4">
-              <div className="text-4xl" aria-hidden="true">{emoji}</div>
+              <div className="text-3xl w-16 shrink-0 text-center whitespace-nowrap" aria-hidden="true">{emoji}</div>
               <div>
                 <div className="font-semibold text-lg">{t(key)}</div>
                 <div className="text-white/60 text-sm">{t(descKey)}</div>
