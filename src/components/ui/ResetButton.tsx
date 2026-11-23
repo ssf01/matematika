@@ -79,8 +79,11 @@ export function ResetButton() {
       {open && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onClick={close}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) close();
+          }}
         >
+          {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- keydown implements the modal focus trap */}
           <div
             ref={dialogRef}
             role="dialog"
@@ -89,7 +92,6 @@ export function ResetButton() {
             onKeyDown={trapFocus}
             className="bg-gray-900/95 border border-white/15 rounded-2xl p-8 mx-4 max-w-sm w-full
               shadow-2xl text-center"
-            onClick={(e) => e.stopPropagation()}
           >
             <p id={titleId} className="text-white text-lg font-medium mb-6">
               {t('reset.confirm')}
