@@ -114,10 +114,13 @@ describe('MetaPuzzleFlow', () => {
       // coordinate-reveal → grid
       fireEvent.click(next());
       flush();
-      const grid = screen.getByRole('group');
-      const target = within(grid).getAllByRole('button').find((b) =>
-        b.getAttribute('aria-label')?.startsWith(`${translations['meta.grid.row']} ${coord.row}, ${translations['meta.grid.col']} ${coord.col}:`),
+      // querySelector instead of *ByRole: role queries over the 100-cell grid are
+      // slow in jsdom and pushed this test past the timeout under CI coverage.
+      const prefix = `${translations['meta.grid.row']} ${coord.row}, ${translations['meta.grid.col']} ${coord.col}:`;
+      const target = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="group"] button[aria-label]')).find(
+        (b) => b.getAttribute('aria-label')!.startsWith(prefix),
       )!;
+      expect(target).toBeDefined();
       fireEvent.click(target);
       fireEvent.click(target);
       flush();
