@@ -58,6 +58,11 @@ export const MAX_CHAIN_LENGTH = 15;
 
 /** Steps per chain in multiplication-PIN (ones-digit) mode. */
 export const MULTIPLICATION_PIN_CHAIN_LENGTH = { min: 6, max: 8 };
+/**
+ * Odd PIN digits are parity-locked to the six odd facts among 3, 7, 9 (see
+ * generator.ts), so long odd chains just repeat the same facts. Keep them short.
+ */
+export const MULTIPLICATION_PIN_ODD_CHAIN_LENGTH = { min: 3, max: 4 };
 
 export const ALL_OPERATIONS: Operation[] = ['+', '-', '*', '/'];
 

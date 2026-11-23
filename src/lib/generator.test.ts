@@ -18,6 +18,7 @@ import {
   DIFFICULTY_CONSTRAINTS,
   META_CHAIN_LENGTH_BY_DIFFICULTY,
   MULTIPLICATION_PIN_CHAIN_LENGTH,
+  MULTIPLICATION_PIN_ODD_CHAIN_LENGTH,
   MAX_CHAIN_LENGTH,
 } from './constants';
 import type { Difficulty, MathStep, Operation, PuzzleChain } from './types';
@@ -249,12 +250,12 @@ describe('multiplication-PIN mode property test', () => {
         const keys = chain.steps.map(factKey);
         if (new Set(keys).size !== keys.length) chainsWithDuplicates++;
         chains++;
-        // Odd targets are parity-locked to the 6 odd facts among 3, 7, 9 → at most 7 steps.
+        // Odd targets are parity-locked to the 6 odd facts among 3, 7, 9 → kept short (3–4 steps).
         checkChain(chain, {
           difficulty: 'hard',
           ops: ['*'],
           digit,
-          length: { min: MULTIPLICATION_PIN_CHAIN_LENGTH.min, max: digit % 2 === 1 ? 7 : MULTIPLICATION_PIN_CHAIN_LENGTH.max },
+          length: digit % 2 === 1 ? MULTIPLICATION_PIN_ODD_CHAIN_LENGTH : MULTIPLICATION_PIN_CHAIN_LENGTH,
           mode: 'onesDigit',
         });
         for (let i = 1; i < chain.steps.length; i++) expect([0, 1, 5]).not.toContain(chain.steps[i].left);
@@ -435,6 +436,12 @@ describe('quality regressions', () => {
     const reported = generateMultiplicationPinPuzzle('1379', mulberry32(1));
     expectDistinctChains(reported.chains);
 
+    // Odd digits only have 6 usable facts (parity), so odd chains are kept short:
+    // an all-odd PIN is ≈ 14 steps instead of ≈ 26 mostly-repeated ones.
+    const oddPuzzles = Array.from({ length: 100 }, (_, seed) => generateMultiplicationPinPuzzle('1379', mulberry32(seed)));
+    const avgOddSteps = oddPuzzles.reduce((a, p) => a + p.chains.reduce((b, c) => b + c.steps.length, 0), 0) / oddPuzzles.length;
+    expect(avgOddSteps).toBeLessThanOrEqual(16);
+
     const evenPuzzles = Array.from({ length: 100 }, (_, seed) => generateMultiplicationPinPuzzle('2468', mulberry32(seed)));
     // Was ≈ 66 % before puzzle-level usage counts; now ≈ 31 %.
     expect(crossChainRepetition(evenPuzzles)).toBeLessThan(0.4);
@@ -451,7 +458,7 @@ describe('quality regressions', () => {
             difficulty: 'hard',
             ops: ['*'],
             digit,
-            length: { min: MULTIPLICATION_PIN_CHAIN_LENGTH.min, max: digit % 2 === 1 ? 7 : MULTIPLICATION_PIN_CHAIN_LENGTH.max },
+            length: digit % 2 === 1 ? MULTIPLICATION_PIN_ODD_CHAIN_LENGTH : MULTIPLICATION_PIN_CHAIN_LENGTH,
             mode: 'onesDigit',
           });
           // Parity: an odd target forces every carried digit to be odd (3, 7 or 9).

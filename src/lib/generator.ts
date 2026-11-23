@@ -7,6 +7,7 @@ import {
   MIN_FACTOR,
   MAX_FACTOR,
   MULTIPLICATION_PIN_CHAIN_LENGTH,
+  MULTIPLICATION_PIN_ODD_CHAIN_LENGTH,
   MAX_CHAIN_LENGTH,
 } from './constants';
 import type { Rng } from './rng';
@@ -778,7 +779,7 @@ function onesDigitChain(targetDigit: number, rng: Rng, usage: FactUsage): Puzzle
     }
   }
   const plan = makePlan(finals, true);
-  const { min, max } = MULTIPLICATION_PIN_CHAIN_LENGTH;
+  const { min, max } = targetDigit % 2 === 1 ? MULTIPLICATION_PIN_ODD_CHAIN_LENGTH : MULTIPLICATION_PIN_CHAIN_LENGTH;
   for (let length = randInt(min, max, rng); length >= 2; length--) {
     const cover = coverTable(`ones|${targetDigit}`, graph, plan, length - 1);
     if (!cover[length - 1].some(Boolean)) continue;
@@ -800,9 +801,10 @@ function onesDigitChain(targetDigit: number, rng: Rng, usage: FactUsage): Puzzle
  * odd × odd, and an even carried digit can never become odd again (even ×
  * anything is even), so EVERY carried digit of an odd-target chain is odd,
  * i.e. one of 3, 7, 9 (1 and 5 are excluded). That leaves 6 non-final facts
- * (3×3, 3×9, 7×7, 7×9, 9×3, 9×7), so odd chains are at most 7 steps and
- * several odd chains in one puzzle must share facts; the puzzle-level usage
- * counts spread that sharing as evenly as possible.
+ * (3×3, 3×9, 7×7, 7×9, 9×3, 9×7). Odd chains are therefore kept short
+ * (MULTIPLICATION_PIN_ODD_CHAIN_LENGTH, 3–4 steps) so they don't keep
+ * repeating the same facts; the puzzle-level usage counts spread whatever
+ * sharing remains as evenly as possible.
  */
 export function generateMultiplicationPinChain(targetDigit: number, rng: Rng = Math.random): PuzzleChain {
   return onesDigitChain(targetDigit, rng, newUsage());
