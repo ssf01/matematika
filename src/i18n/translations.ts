@@ -168,8 +168,6 @@ export const translations = {
   'meta.grid.findDigit': 'Пронађи цифру на позицији',
   'meta.grid.digitFound': 'Цифра пронађена!',
   'meta.coordinatePair': 'Пар',
-  'meta.rowResult': 'Ред: {row}',
-  'meta.colResult': 'Колона: {col}',
 
   // Meta story - Agent theme
   'story.agent.meta.intro': 'Агенте, добили смо тајни нацрт зграде! У њој се крије сеф са четвороцифреним кодом. Морамо дешифровати координате сваке цифре — спрат и собу.',

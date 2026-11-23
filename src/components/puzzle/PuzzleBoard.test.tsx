@@ -93,6 +93,8 @@ describe('MetaPuzzleFlow', () => {
       useGameStore.getState().markChainCompleted(0);
     });
     expect(screen.queryByText(/Цифра/)).toBeNull();
+    // No unfilled translation placeholders leak into the UI.
+    expect(document.body.textContent).not.toMatch(/\{\w+\}/);
   });
 
   it('double-tapping the target cell reveals each digit exactly once', () => {

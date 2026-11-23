@@ -11,7 +11,10 @@
  *   - /_astro/* (hashed, immutable): cache-first
  *   - other same-origin files: stale-while-revalidate
  */
-const PRECACHE = self.__PRECACHE_MANIFEST__ || ['/'];
+// Without a build-time manifest (e.g. raw public/sw.js served by `astro dev`)
+// this worker must not cache anything: unregister and bail out.
+const IS_BUILD = Array.isArray(self.__PRECACHE_MANIFEST__);
+const PRECACHE = self.__PRECACHE_MANIFEST__ || [];
 const VERSION = self.__PRECACHE_VERSION__ || 'dev';
 const CACHE = `matematika-${VERSION}`;
 
@@ -19,12 +22,24 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => cache.addAll(PRECACHE))
+      .then((cache) =>
+        // bypass the HTTP cache so a fresh deploy never precaches stale HTML
+        cache.addAll(PRECACHE.map((u) => new Request(u, { cache: 'reload' }))),
+      )
       .then(() => self.skipWaiting()),
   );
 });
 
 self.addEventListener('activate', (event) => {
+  if (!IS_BUILD) {
+    event.waitUntil(
+      caches
+        .keys()
+        .then((keys) => Promise.all(keys.filter((k) => k.startsWith('matematika-')).map((k) => caches.delete(k))))
+        .then(() => self.registration.unregister()),
+    );
+    return;
+  }
   event.waitUntil(
     caches
       .keys()
@@ -77,6 +92,7 @@ async function staleWhileRevalidate(request, event) {
 }
 
 self.addEventListener('fetch', (event) => {
+  if (!IS_BUILD) return;
   const { request } = event;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);

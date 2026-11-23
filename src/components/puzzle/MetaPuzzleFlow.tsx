@@ -113,7 +113,6 @@ export function MetaPuzzleFlow({ puzzle }: MetaPuzzleFlowProps) {
   const rowName = t(labels.row);
   const colName = t(labels.col);
   const pairTitle = (axis: string) => `${t('meta.coordinatePair')} ${activePairIndex + 1} — ${axis}`;
-  const resultLabel = (key: string, axis: string) => fillTemplate(tOr(t, key, axis), { label: axis });
   const coordinateHint = tOr(t, 'puzzle.lastDigitHintCoordinate', t('puzzle.multiplicationHint'));
 
   return (
@@ -161,7 +160,7 @@ export function MetaPuzzleFlow({ puzzle }: MetaPuzzleFlowProps) {
                   onAnswer={handleAnswer}
                   isCompleted={completedChains.includes(rowChainIdx)}
                   title={pairTitle(rowName)}
-                  resultLabel={resultLabel('meta.rowResult', rowName)}
+                  resultLabel={rowName}
                   hint={coordinateHint}
                 />
               ) : (
@@ -173,7 +172,7 @@ export function MetaPuzzleFlow({ puzzle }: MetaPuzzleFlowProps) {
                   onAnswer={handleAnswer}
                   isCompleted={completedChains.includes(colChainIdx)}
                   title={pairTitle(colName)}
-                  resultLabel={resultLabel('meta.colResult', colName)}
+                  resultLabel={colName}
                   hint={coordinateHint}
                 />
               )}

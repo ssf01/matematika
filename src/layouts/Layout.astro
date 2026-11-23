@@ -69,6 +69,17 @@ const themeColor = '#030712'; // tailwind gray-950, matches body background
         </script>
       )
     }
+    {
+      !import.meta.env.PROD && (
+        <script is:inline>
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function (rs) {
+              rs.forEach(function (r) { r.unregister(); });
+            });
+          }
+        </script>
+      )
+    }
   </head>
   <body class="min-h-dvh bg-gray-950 text-white antialiased">
     <slot />
