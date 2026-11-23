@@ -52,6 +52,12 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Servers may answer with `Vary: Origin` (e.g. `astro preview`), and module
+// scripts are requested in CORS mode with an Origin header while the precache
+// requests are not, so a plain match() misses and offline loads fail. Our
+// cached files are static and same-origin, so Vary can safely be ignored.
+const MATCH = { ignoreVary: true };
+
 async function networkFirst(request) {
   const cache = await caches.open(CACHE);
   try {
@@ -60,7 +66,7 @@ async function networkFirst(request) {
     return response;
   } catch (err) {
     const cached =
-      (await cache.match(request, { ignoreSearch: true })) || (await cache.match('/'));
+      (await cache.match(request, { ...MATCH, ignoreSearch: true })) || (await cache.match('/', MATCH));
     if (cached) return cached;
     throw err;
   }
@@ -68,7 +74,7 @@ async function networkFirst(request) {
 
 async function cacheFirst(request) {
   const cache = await caches.open(CACHE);
-  const cached = await cache.match(request);
+  const cached = await cache.match(request, MATCH);
   if (cached) return cached;
   const response = await fetch(request);
   if (response.ok) cache.put(request, response.clone());
@@ -77,7 +83,7 @@ async function cacheFirst(request) {
 
 async function staleWhileRevalidate(request, event) {
   const cache = await caches.open(CACHE);
-  const cached = await cache.match(request);
+  const cached = await cache.match(request, MATCH);
   const network = fetch(request)
     .then((response) => {
       if (response.ok) cache.put(request, response.clone());
