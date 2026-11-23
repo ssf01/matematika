@@ -18,10 +18,7 @@ export default defineConfig([
     rules: {
       // TEMPORARY: downgraded to 'warn' because existing code violates them and is
       // being fixed in parallel workstreams. Promote back to 'error' once clean.
-      // PuzzleBoard.tsx currently calls hooks conditionally (fix in progress).
-      'react-hooks/rules-of-hooks': 'warn',
       'react-hooks/purity': 'warn',
-      'react-hooks/set-state-in-effect': 'warn',
       'jsx-a11y/no-autofocus': 'warn',
       'jsx-a11y/click-events-have-key-events': 'warn',
       'jsx-a11y/no-static-element-interactions': 'warn',
