@@ -1,125 +1,161 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useTheme } from '../themes/ThemeProvider';
-import { CorrectAnswerEffect } from './CorrectAnswerEffect';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import type { ChangeEvent, KeyboardEvent } from 'react';
+import { useTranslation } from '../../i18n/useTranslation';
+
+/** Wrong explicit submissions on one step before the input pauses. */
+export const MAX_WRONG_ATTEMPTS = 3;
+/** How long the input stays locked after too many wrong attempts. */
+export const COOLDOWN_MS = 5000;
+/** Duration of the "wrong" shake before the input is cleared. */
+export const WRONG_FEEDBACK_MS = 800;
+const MAX_DIGITS = 4;
+
+type Status = 'idle' | 'wrong' | 'cooldown' | 'correct';
 
 interface AnswerInputProps {
-  onSubmit: (value: number) => boolean;
-  isCorrect: boolean | null;
-  disabled?: boolean;
+  /** The correct result; typing it is accepted immediately. */
+  expected: number;
+  /** Called once with the correct value. */
+  onCorrect: (value: number) => void;
+  /** Accessible name of the input. */
+  label: string;
   autoFocus?: boolean;
 }
 
-export function AnswerInput({ onSubmit, isCorrect, disabled, autoFocus }: AnswerInputProps) {
-  const { theme } = useTheme();
+/**
+ * Answer box for the active step.
+ * - Accepts the moment the typed value equals the expected result.
+ * - Rejects only on Enter or the ✓ button (never on a timer), so a child
+ *   typing "1" on the way to "12" is never told they're wrong.
+ * - After MAX_WRONG_ATTEMPTS rejections the box pauses for COOLDOWN_MS.
+ * The input is made read-only rather than disabled while paused so it keeps
+ * focus and the on-screen keyboard stays open.
+ */
+export function AnswerInput({ expected, onCorrect, label, autoFocus }: AnswerInputProps) {
+  const { t } = useTranslation();
   const [value, setValue] = useState('');
-  const [shaking, setShaking] = useState(false);
-  const [wrongAnswer, setWrongAnswer] = useState(false);
-  const [showEffect, setShowEffect] = useState(false);
+  const [status, setStatus] = useState<Status>('idle');
+  const wrongCount = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+
+  const later = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      timers.current.delete(id);
+      fn();
+    }, ms);
+    timers.current.add(id);
+  }, []);
 
   useEffect(() => {
-    if (autoFocus && !disabled) inputRef.current?.focus();
-  }, [autoFocus, disabled]);
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
+    const pending = timers.current;
     return () => {
-      if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
+      pending.forEach(clearTimeout);
+      pending.clear();
     };
   }, []);
 
-  const doSubmit = useCallback((val: string) => {
-    if (!val || disabled || shaking) return;
-    const num = parseInt(val, 10);
-    if (isNaN(num)) return;
-    const correct = onSubmit(num);
-    if (correct) {
-      setShowEffect(true);
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus({ preventScroll: true });
+  }, [autoFocus]);
+
+  const locked = status !== 'idle';
+
+  const accept = (num: number) => {
+    setStatus('correct');
+    onCorrect(num);
+  };
+
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (locked) return;
+    const next = e.target.value.replace(/\D/g, '').slice(0, MAX_DIGITS);
+    setValue(next);
+    if (next !== '' && parseInt(next, 10) === expected) accept(expected);
+  };
+
+  const submit = () => {
+    if (locked || value === '') return;
+    const num = parseInt(value, 10);
+    if (num === expected) {
+      accept(num);
+      return;
+    }
+    wrongCount.current += 1;
+    if (wrongCount.current >= MAX_WRONG_ATTEMPTS) {
+      wrongCount.current = 0;
+      setValue('');
+      setStatus('cooldown');
+      later(() => {
+        setStatus('idle');
+        inputRef.current?.focus({ preventScroll: true });
+      }, COOLDOWN_MS);
     } else {
-      setShaking(true);
-      setWrongAnswer(true);
-      setTimeout(() => {
-        setShaking(false);
-        setWrongAnswer(false);
+      setStatus('wrong');
+      later(() => {
         setValue('');
-        inputRef.current?.focus();
-      }, 800);
-    }
-  }, [disabled, shaking, onSubmit]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (shaking) return;
-    const newValue = e.target.value.replace(/\D/g, '');
-    setValue(newValue);
-
-    // Auto-submit after a delay for tablet users (no Enter key on numeric pad)
-    if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
-    if (newValue) {
-      submitTimeoutRef.current = setTimeout(() => doSubmit(newValue), 1200);
+        setStatus('idle');
+        inputRef.current?.focus({ preventScroll: true });
+      }, WRONG_FEEDBACK_MS);
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
-      doSubmit(value);
+      e.preventDefault();
+      submit();
     }
   };
 
-  const handleButtonSubmit = () => {
-    if (submitTimeoutRef.current) clearTimeout(submitTimeoutRef.current);
-    doSubmit(value);
-  };
-
-  if (isCorrect === true) {
-    return (
-      <span className="relative inline-flex items-center justify-center w-20 h-14 rounded-lg
-        bg-green-500/20 border-2 border-green-500 text-green-400 text-2xl font-bold
-        animate-glow" style={{ color: '#22c55e' }}>
-        {value}
-        {showEffect && (
-          <CorrectAnswerEffect
-            emojis={theme.rewardEmojis}
-            onComplete={() => setShowEffect(false)}
-          />
-        )}
-      </span>
-    );
-  }
+  const message =
+    status === 'wrong' ? t('puzzle.incorrect') : status === 'cooldown' ? t('puzzle.cooldown') : '';
 
   return (
     <div className="relative inline-flex items-center gap-1">
       <div className="relative inline-flex flex-col items-center">
         <input
           ref={inputRef}
-          type="tel"
+          type="text"
           inputMode="numeric"
+          pattern="[0-9]*"
+          autoComplete="off"
+          enterKeyHint="done"
+          aria-label={label}
+          aria-invalid={status === 'wrong' || undefined}
+          aria-disabled={status === 'cooldown' || undefined}
+          readOnly={locked}
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          disabled={disabled || shaking}
+          placeholder={status === 'cooldown' ? '⏳' : '?'}
           className={`w-20 h-14 text-2xl font-bold text-center rounded-lg transition-all duration-200
-            bg-white/10 border-2
+            bg-white/10 border-2 text-white placeholder:text-white/30
             focus:outline-none focus:ring-2 focus:ring-white/30
-            ${disabled ? 'opacity-30 cursor-not-allowed border-white/10 text-white' : 'border-white/20 focus:border-white/50 text-white'}
-            ${shaking ? 'animate-shake !border-red-500 !bg-red-500/20 !text-red-400 !ring-red-500/30' : ''}`}
-          placeholder="?"
+            ${status === 'wrong'
+              ? 'animate-shake !border-red-500 !bg-red-500/20 !text-red-400 !ring-red-500/30'
+              : status === 'cooldown'
+                ? 'border-amber-400/50 bg-amber-400/10 cursor-wait'
+                : 'border-white/20 focus:border-white/50'}`}
         />
-        {wrongAnswer && (
-          <span className="absolute -bottom-6 text-xs font-semibold text-red-400 animate-pulse whitespace-nowrap">
-            Нетачно!
-          </span>
-        )}
+        <span
+          role="status"
+          aria-live="polite"
+          className={`absolute top-full mt-1 text-xs font-semibold whitespace-nowrap z-10
+            ${status === 'cooldown' ? 'text-amber-300' : 'text-red-400'}`}
+        >
+          {message}
+        </span>
       </div>
-      {/* Submit button for tablet users */}
-      {value && !disabled && !shaking && (
+      {/* Explicit check button: on tablets the numeric pad may have no Enter key */}
+      {value && status === 'idle' && (
         <button
-          onClick={handleButtonSubmit}
-          className="w-10 h-10 rounded-lg bg-white/15 hover:bg-white/25 text-white/70
+          type="button"
+          onClick={submit}
+          // Keep focus in the input so the on-screen keyboard stays open.
+          onPointerDown={(e) => e.preventDefault()}
+          aria-label={t('puzzle.check')}
+          className="w-11 h-11 rounded-lg bg-white/15 hover:bg-white/25 text-white/70
             hover:text-white flex items-center justify-center transition-all duration-200
             active:scale-90 text-lg font-bold flex-shrink-0"
-          type="button"
         >
           ✓
         </button>

@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { DigitReveal } from './DigitReveal';
 import { CelebrationOverlay } from './CelebrationOverlay';
 import { useGameStore } from '../../stores/gameStore';
 import { useTranslation } from '../../i18n/useTranslation';
 import { useTheme } from '../themes/ThemeProvider';
 import { Button } from '../ui/Button';
+import { tOr } from '../puzzle/format';
 
 export function PinReveal() {
   const { t } = useTranslation();
-  const { theme } = useTheme();
+  const { theme, themeId } = useTheme();
   const pin = useGameStore((s) => s.pin);
   const reset = useGameStore((s) => s.reset);
   const [revealedCount, setRevealedCount] = useState(0);
@@ -35,10 +36,12 @@ export function PinReveal() {
       </h1>
 
       <p className="text-white/60 mb-8 text-center text-lg">
-        {revealedCount >= pin.length ? t('reveal.unlocked') : theme.completionMessage}
+        {revealedCount >= pin.length
+          ? t('reveal.unlocked')
+          : tOr(t, `reveal.completion.${themeId}`, theme.completionMessage)}
       </p>
 
-      <div className="flex gap-4 mb-12">
+      <div className="flex gap-3 sm:gap-4 mb-12" role="status" aria-live="polite" aria-label={t('reveal.title')}>
         {pin.split('').map((digit, i) => (
           <DigitReveal
             key={i}

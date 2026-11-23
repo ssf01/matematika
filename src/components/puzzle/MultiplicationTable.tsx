@@ -1,52 +1,68 @@
-import React, { useState, useMemo } from 'react';
+import { useEffect, useRef } from 'react';
+import type { KeyboardEvent } from 'react';
 import { useTranslation } from '../../i18n/useTranslation';
 import { useGameStore } from '../../stores/gameStore';
+import type { MultiplicationTableState } from '../../stores/gameStore';
 import { generateMultiplicationTable } from '../../lib/generator';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { ProgressBar } from '../ui/ProgressBar';
+import { opSymbol } from './format';
 
 interface MultiplicationTableProps {
   number: number;
 }
 
+function freshTable(number: number): MultiplicationTableState {
+  return { number, steps: generateMultiplicationTable(number), answers: {}, checked: false };
+}
+
+/**
+ * Practice sheet for one multiplication table. Order, answers and the checked
+ * state live in the persisted store, so a reload keeps the child's work.
+ * "Try again" reshuffles the questions so the order can't be memorised.
+ */
 export function MultiplicationTable({ number: initialNumber }: MultiplicationTableProps) {
   const { t } = useTranslation();
   const reset = useGameStore((s) => s.reset);
-  const [selectedNumber, setSelectedNumber] = useState(initialNumber);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [checked, setChecked] = useState(false);
-  const [results, setResults] = useState<Record<number, boolean>>({});
+  const stored = useGameStore((s) => s.multiplicationTable);
+  const setTable = useGameStore((s) => s.setMultiplicationTable);
+  const setTableNumber = useGameStore((s) => s.setMultiplicationTableNumber);
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  const steps = useMemo(
-    () => generateMultiplicationTable(selectedNumber),
-    [selectedNumber],
-  );
+  const table = stored && stored.number === initialNumber ? stored : null;
 
-  const correctCount = Object.values(results).filter(Boolean).length;
+  useEffect(() => {
+    if (!table) setTable(freshTable(initialNumber));
+  }, [table, initialNumber, setTable]);
+
+  if (!table) return null;
+
+  const { steps, answers, checked } = table;
+  const results = steps.map((step, i) => parseInt(answers[i] ?? '', 10) === step.result);
+  const correctCount = results.filter(Boolean).length;
   const totalCount = steps.length;
 
-  const handleCheck = () => {
-    const newResults: Record<number, boolean> = {};
-    steps.forEach((step, i) => {
-      const userAnswer = parseInt(answers[i] || '', 10);
-      newResults[i] = !isNaN(userAnswer) && userAnswer === step.result;
-    });
-    setResults(newResults);
-    setChecked(true);
-  };
+  const update = (patch: Partial<MultiplicationTableState>) => setTable({ ...table, ...patch });
+
+  const handleCheck = () => update({ checked: true });
 
   const handleRetry = () => {
-    setAnswers({});
-    setResults({});
-    setChecked(false);
+    setTable(freshTable(table.number));
+    inputRefs.current[0]?.focus();
   };
 
   const handleChangeNumber = (num: number) => {
-    setSelectedNumber(num);
-    setAnswers({});
-    setResults({});
-    setChecked(false);
+    setTableNumber(num);
+    setTable(freshTable(num));
+  };
+
+  const handleKeyDown = (i: number, e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const next = inputRefs.current[i + 1];
+    if (next) next.focus();
+    else handleCheck();
   };
 
   return (
@@ -57,9 +73,11 @@ export function MultiplicationTable({ number: initialNumber }: MultiplicationTab
         {Array.from({ length: 10 }, (_, i) => i + 1).map((num) => (
           <button
             key={num}
+            type="button"
             onClick={() => handleChangeNumber(num)}
+            aria-pressed={table.number === num}
             className={`w-11 h-11 rounded-full font-bold text-lg transition-all duration-200
-              ${selectedNumber === num
+              ${table.number === num
                 ? 'bg-white/30 text-white scale-110 ring-2 ring-white/50'
                 : 'bg-white/10 text-white/70 hover:bg-white/20'}`}
           >
@@ -68,31 +86,49 @@ export function MultiplicationTable({ number: initialNumber }: MultiplicationTab
         ))}
       </div>
 
-      {checked && (
-        <div className="mb-4">
-          <ProgressBar current={correctCount} total={totalCount} />
-          <p className="text-center mt-2 text-lg font-semibold">
-            {correctCount === totalCount
-              ? t('multiplicationTable.perfect')
-              : `${t('multiplicationTable.score')}: ${correctCount}/${totalCount}`}
-          </p>
-        </div>
-      )}
+      <div aria-live="polite">
+        {checked && (
+          <div className="mb-4">
+            <ProgressBar current={correctCount} total={totalCount} />
+            <p className="text-center mt-2 text-lg font-semibold">
+              {correctCount === totalCount
+                ? t('multiplicationTable.perfect')
+                : `${t('multiplicationTable.score')}: ${correctCount}/${totalCount}`}
+            </p>
+          </div>
+        )}
+      </div>
 
       <Card className="mb-6">
-        <div className="space-y-3">
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleCheck();
+          }}
+        >
           {steps.map((step, i) => (
-            <div key={i} className="flex items-center gap-2 text-xl font-mono">
+            <div key={`${step.left}-${step.right}`} className="flex items-center gap-2 text-xl font-mono">
               <span className="min-w-[2ch] text-right">{step.left}</span>
-              <span className="text-white/60">×</span>
+              <span className="text-white/60">{opSymbol(step.operator)}</span>
               <span className="min-w-[2ch]">{step.right}</span>
               <span className="text-white/40">=</span>
               <input
-                type="tel"
+                ref={(el) => {
+                  inputRefs.current[i] = el;
+                }}
+                type="text"
                 inputMode="numeric"
-                value={answers[i] || ''}
-                onChange={(e) => setAnswers({ ...answers, [i]: e.target.value.replace(/\D/g, '') })}
-                disabled={checked}
+                pattern="[0-9]*"
+                autoComplete="off"
+                enterKeyHint={i === steps.length - 1 ? 'done' : 'next'}
+                aria-label={`${t('a11y.answer')}: ${step.left} ${opSymbol(step.operator)} ${step.right}`}
+                value={answers[i] ?? ''}
+                onChange={(e) =>
+                  update({ answers: { ...answers, [i]: e.target.value.replace(/\D/g, '').slice(0, 3) } })
+                }
+                onKeyDown={(e) => handleKeyDown(i, e)}
+                readOnly={checked}
                 className={`w-20 h-12 text-xl font-bold text-center rounded-lg transition-all
                   focus:outline-none focus:ring-2 focus:ring-white/30
                   ${checked
@@ -106,7 +142,7 @@ export function MultiplicationTable({ number: initialNumber }: MultiplicationTab
               )}
             </div>
           ))}
-        </div>
+        </form>
       </Card>
 
       <div className="flex gap-4">

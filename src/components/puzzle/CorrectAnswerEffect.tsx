@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import type { CSSProperties } from 'react';
 
 interface CorrectAnswerEffectProps {
   emojis: string[];
@@ -25,7 +26,7 @@ export function CorrectAnswerEffect({ emojis, burst, onComplete }: CorrectAnswer
         style: {
           '--burst-x': `${Math.cos(angle) * dist}px`,
           '--burst-y': `${Math.sin(angle) * dist}px`,
-        } as React.CSSProperties,
+        } as CSSProperties,
       };
     });
   }, [emojis, burst]);
