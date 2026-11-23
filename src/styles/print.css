@@ -30,20 +30,6 @@
     padding-bottom: 1rem;
   }
 
-  .print-chain {
-    padding: 0.5rem 0;
-    font-size: 16pt;
-    font-family: 'Courier New', monospace;
-  }
-
-  .print-blank {
-    display: inline-block;
-    width: 3em;
-    border-bottom: 2px solid #333;
-    text-align: center;
-    margin: 0 0.25em;
-  }
-
   .print-answer-key {
     page-break-before: always;
     border-top: 2px dashed #999;

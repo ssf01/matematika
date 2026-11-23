@@ -64,6 +64,9 @@ export const translations = {
 
   'script.cyrillic': 'Ћирилица',
   'script.latin': 'Latinica',
+  // Toggle labels, always shown in their own script (read with lookup(), never transliterated)
+  'script.cyrillicShort': 'ЋИР',
+  'script.latinShort': 'LAT',
 
   // Screen-reader labels
   'a11y.reset': 'Почни испочетка',
@@ -77,7 +80,7 @@ export const translations = {
   'print.instructions': 'Реши све задатке. Последња цифра сваког низа је цифра ПИН кода!',
   'puzzle.multiplicationHint': 'Последња цифра резултата је цифра ПИН кода!',
   'print.onesDigitInstruction': 'Цифру јединице резултата пренеси у следећи ред као први број.',
-  'print.answerKey': 'Решења (само за родитеље)',
+  'print.answerKey': 'Решења',
   'print.print': 'Штампај',
   'print.back': 'Назад',
   'print.name': 'Име:',
