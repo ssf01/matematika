@@ -18,6 +18,7 @@ import {
   DIFFICULTY_CONSTRAINTS,
   META_CHAIN_LENGTH_BY_DIFFICULTY,
   MULTIPLICATION_PIN_CHAIN_LENGTH,
+  MAX_CHAIN_LENGTH,
 } from './constants';
 import type { Difficulty, MathStep, Operation, PuzzleChain } from './types';
 
@@ -248,12 +249,12 @@ describe('multiplication-PIN mode property test', () => {
         const keys = chain.steps.map(factKey);
         if (new Set(keys).size !== keys.length) chainsWithDuplicates++;
         chains++;
-        // Odd targets are parity-locked to the 6 odd facts among 3, 7, 9 → shorter chains.
+        // Odd targets are parity-locked to the 6 odd facts among 3, 7, 9 → at most 7 steps.
         checkChain(chain, {
           difficulty: 'hard',
           ops: ['*'],
           digit,
-          length: { min: digit % 2 === 1 ? 5 : MULTIPLICATION_PIN_CHAIN_LENGTH.min, max: MULTIPLICATION_PIN_CHAIN_LENGTH.max },
+          length: { min: MULTIPLICATION_PIN_CHAIN_LENGTH.min, max: digit % 2 === 1 ? 7 : MULTIPLICATION_PIN_CHAIN_LENGTH.max },
           mode: 'onesDigit',
         });
         for (let i = 1; i < chain.steps.length; i++) expect([0, 1, 5]).not.toContain(chain.steps[i].left);
@@ -394,6 +395,147 @@ describe('regressions', () => {
     expect(generateMetaPuzzle('2580', 'easy', ['-', '/'], mulberry32(9))).toEqual(
       generateMetaPuzzle('2580', 'easy', ['-', '/'], mulberry32(9)),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Quality regressions (Q1–Q5): variety, op coverage, no near-undo, few ±1
+// ---------------------------------------------------------------------------
+
+function looseKey(s: MathStep) {
+  return s.operator === '+' || s.operator === '*'
+    ? `${Math.min(s.left, s.right)}${s.operator}${Math.max(s.left, s.right)}`
+    : factKey(s);
+}
+
+/** Share of steps whose (loose) fact also appears in another chain of the same puzzle. */
+function crossChainRepetition(puzzles: { chains: PuzzleChain[] }[]) {
+  let repeated = 0;
+  let total = 0;
+  for (const { chains } of puzzles) {
+    chains.forEach((chain, i) => {
+      const others = new Set(chains.filter((_, j) => j !== i).flatMap((c) => c.steps.map(looseKey)));
+      for (const s of chain.steps) {
+        total++;
+        if (others.has(looseKey(s))) repeated++;
+      }
+    });
+  }
+  return repeated / total;
+}
+
+function expectDistinctChains(chains: PuzzleChain[]) {
+  const signatures = chains.map((c) => c.steps.map(factKey).join(','));
+  expect(new Set(signatures).size).toBe(signatures.length);
+}
+
+describe('quality regressions', () => {
+  it('Q1: multiplication-PIN puzzles spread facts across chains and never repeat a chain', () => {
+    // The reported case: 4 near-identical chains.
+    const reported = generateMultiplicationPinPuzzle('1379', mulberry32(1));
+    expectDistinctChains(reported.chains);
+
+    const evenPuzzles = Array.from({ length: 100 }, (_, seed) => generateMultiplicationPinPuzzle('2468', mulberry32(seed)));
+    // Was ≈ 66 % before puzzle-level usage counts; now ≈ 31 %.
+    expect(crossChainRepetition(evenPuzzles)).toBeLessThan(0.4);
+
+    for (let seed = 0; seed < 200; seed++) {
+      const rng = mulberry32(seed);
+      const pin = String(randInt(0, 9999, rng)).padStart(4, '0');
+      for (const p of [pin, '3333', '9999', '1111']) {
+        const puzzle = generateMultiplicationPinPuzzle(p, mulberry32(seed));
+        expectDistinctChains(puzzle.chains);
+        puzzle.chains.forEach((chain, i) => {
+          const digit = Number(p[i]);
+          checkChain(chain, {
+            difficulty: 'hard',
+            ops: ['*'],
+            digit,
+            length: { min: MULTIPLICATION_PIN_CHAIN_LENGTH.min, max: digit % 2 === 1 ? 7 : MULTIPLICATION_PIN_CHAIN_LENGTH.max },
+            mode: 'onesDigit',
+          });
+          // Parity: an odd target forces every carried digit to be odd (3, 7 or 9).
+          if (digit % 2 === 1) for (const s of chain.steps) expect([3, 7, 9]).toContain(s.left);
+        });
+      }
+    }
+  });
+
+  it('Q2: repeated-digit PINs never produce identical chains (standard and meta)', () => {
+    const reported = generatePuzzle('5555', 'easy', ['-', '*'], mulberry32(25));
+    expectDistinctChains(reported.chains);
+
+    const puzzles = [];
+    for (const ops of OP_SUBSETS) {
+      for (const difficulty of DIFFICULTIES) {
+        for (let seed = 0; seed < 10; seed++) {
+          for (const pin of ['5555', '0000', '1111', '7777']) {
+            const puzzle = generatePuzzle(pin, difficulty, ops, mulberry32(seed));
+            expectDistinctChains(puzzle.chains);
+            puzzles.push(puzzle);
+          }
+          expectDistinctChains(generateMetaPuzzle('3333', difficulty, ops, mulberry32(seed)).chains);
+        }
+      }
+    }
+    // Was ≈ 24 % before puzzle-level usage counts; now ≈ 6 %.
+    expect(crossChainRepetition(puzzles)).toBeLessThan(0.12);
+  });
+
+  it('Q3: every selected operation appears in every chained chain (standard lengths)', () => {
+    const cases: [Difficulty, Operation[]][] = [
+      ['hard', ['+', '-', '*']],
+      ['hard', ALL_OPS],
+      ['medium', ALL_OPS],
+      ['easy', ALL_OPS],
+      ['easy', ['+', '-', '*']],
+    ];
+    for (const [difficulty, ops] of cases) {
+      let missing = 0;
+      for (let seed = 0; seed < 100; seed++) {
+        for (let digit = 0; digit <= 9; digit++) {
+          const chain = generateChain(digit, difficulty, ops, undefined, mulberry32(seed * 10 + digit));
+          const used = new Set(chain.steps.map((s) => s.operator));
+          if (ops.some((op) => !used.has(op))) missing++;
+        }
+      }
+      // Was 49 % (hard +−×) and 30 % (hard +−×÷).
+      expect(missing, `${difficulty} ${ops.join('')}`).toBe(0);
+    }
+  });
+
+  it('Q4: chained walks avoid near-undo, commuted repeats and most ±1 steps', () => {
+    let plusMinus = 0;
+    let plusMinusOne = 0;
+    for (const ops of [['+', '-'], ALL_OPS] as Operation[][]) {
+      for (let seed = 0; seed < 500; seed++) {
+        const chain = generateChain(seed % 10, 'easy', ops, undefined, mulberry32(seed));
+        const loose = chain.steps.map(looseKey);
+        expect(new Set(loose).size).toBe(loose.length);
+        chain.steps.forEach((s, i) => {
+          if (i > 0) expect(s.result).not.toBe(chain.steps[i - 1].left);
+          if (s.operator === '+' || s.operator === '-') {
+            plusMinus++;
+            if (s.right === 1) plusMinusOne++;
+          }
+        });
+      }
+    }
+    // Was ≈ 25 % of easy +/− steps; now ≈ 6 %.
+    expect(plusMinusOne / plusMinus).toBeLessThan(0.1);
+  });
+
+  it('Q5: length overrides up to MAX_CHAIN_LENGTH work; longer ones throw', () => {
+    for (const ops of OP_SUBSETS) {
+      for (const difficulty of DIFFICULTIES) {
+        for (let digit = 0; digit <= 9; digit += 3) {
+          const chain = generateChain(digit, difficulty, ops, { min: MAX_CHAIN_LENGTH, max: MAX_CHAIN_LENGTH }, mulberry32(digit));
+          expect(chain.steps).toHaveLength(MAX_CHAIN_LENGTH);
+          expect(getChainFinalDigit(chain)).toBe(digit);
+        }
+      }
+    }
+    expect(() => generateChain(1, 'easy', ['+'], { min: 2, max: MAX_CHAIN_LENGTH + 1 })).toThrow();
   });
 });
 

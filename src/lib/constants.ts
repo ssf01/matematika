@@ -53,6 +53,9 @@ export const META_CHAIN_LENGTH_BY_DIFFICULTY: Record<Difficulty, { min: number; 
   hard: { min: 8, max: 10 },
 };
 
+/** Upper bound for any chain length (including chainLengthOverride). */
+export const MAX_CHAIN_LENGTH = 15;
+
 /** Steps per chain in multiplication-PIN (ones-digit) mode. */
 export const MULTIPLICATION_PIN_CHAIN_LENGTH = { min: 6, max: 8 };
 
