@@ -54,6 +54,9 @@ export function PrintSection({ chain, chainIndex, showAnswers, hideHeader, foote
           {t('puzzle.digit')} {chainIndex + 1}
         </h3>
       )}
+      {chain.useLastDigit && chain.chainMode !== 'onesDigit' && !showAnswers && (
+        <p className="text-xs text-white/75 print:text-gray-600 italic mb-2">{t('puzzle.multiplicationHint')}</p>
+      )}
       {hasOnesDigitCarry && chainedSteps && !showAnswers && (
         <div className="text-xs text-white/75 print:text-gray-600 italic mb-2">
           <p>{t('print.onesDigitInstruction')}</p>

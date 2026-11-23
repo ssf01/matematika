@@ -16,11 +16,11 @@ export const translations = {
   'setup.start': 'Почни!',
 
   'difficulty.easy': 'Лако',
-  'difficulty.easyDesc': 'Бројеви до 10, без преноса',
+  'difficulty.easyDesc': 'Бројеви до 10, таблице 2, 3, 5 и 10',
   'difficulty.medium': 'Средње',
-  'difficulty.mediumDesc': 'Бројеви до 18, са преносом',
+  'difficulty.mediumDesc': 'Бројеви до 20, таблице 2–5 и 10',
   'difficulty.hard': 'Тешко',
-  'difficulty.hardDesc': 'Двоцифрени бројеви',
+  'difficulty.hardDesc': 'Двоцифрени бројеви, таблице 2–10',
 
   'operation.add': 'Сабирање',
   'operation.subtract': 'Одузимање',

@@ -28,7 +28,7 @@ Aplikacija radi u browseru, može da se **instalira kao aplikacija** (PWA) i **r
 
 | Nivo | Sabiranje / oduzimanje | Množenje / deljenje |
 | --- | --- | --- |
-| **Lako** | brojevi do 10 | tablice 2, 5 i 10 |
+| **Lako** | brojevi do 10 | tablice 2, 3, 5 i 10 |
 | **Srednje** | brojevi do 20 | tablice 2–5 i 10 |
 | **Teško** | dvocifreni brojevi | tablice 2–10 |
 
