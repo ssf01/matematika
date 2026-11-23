@@ -16,15 +16,25 @@ export function OperationsPicker() {
   const toggleOperation = useGameStore((s) => s.toggleOperation);
 
   return (
-    <div className="grid grid-cols-2 gap-4">
-      {ops.map(({ id, symbol, key }) => (
-        <Card key={id} selected={operations.includes(id)} onClick={() => toggleOperation(id)}>
-          <div className="text-center">
-            <div className="text-4xl font-bold mb-1">{symbol}</div>
-            <div className="text-sm text-white/70">{t(key)}</div>
-          </div>
-        </Card>
-      ))}
+    <div className="grid grid-cols-2 gap-3 sm:gap-4">
+      {ops.map(({ id, symbol, key }) => {
+        const selected = operations.includes(id);
+        return (
+          <Card key={id} selected={selected} onClick={() => toggleOperation(id)}>
+            <div className="flex flex-col items-center gap-2 py-1">
+              <span
+                aria-hidden="true"
+                className={`w-16 h-16 rounded-2xl flex items-center justify-center text-5xl font-black leading-none
+                  transition-colors duration-150
+                  ${selected ? 'accent-gradient text-on-accent' : 'bg-white/10 text-white'}`}
+              >
+                {symbol}
+              </span>
+              <span className="font-bold text-lg">{t(key)}</span>
+            </div>
+          </Card>
+        );
+      })}
     </div>
   );
 }

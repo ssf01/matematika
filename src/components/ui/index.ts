@@ -3,3 +3,4 @@ export { Card } from './Card';
 export { ProgressBar } from './ProgressBar';
 export { ScriptToggle } from './ScriptToggle';
 export { ResetButton } from './ResetButton';
+export { TopBarLayout, TopBarSlot } from './TopBar';

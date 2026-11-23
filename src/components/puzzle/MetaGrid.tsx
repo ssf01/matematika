@@ -57,43 +57,41 @@ export function MetaGrid({ grid, activeCoordinate, revealedCoordinates, onCellCl
 
   const cols = grid.cells[0]?.length ?? 0;
   // Header column + N cells. Cells shrink on narrow phones (no horizontal
-  // scroll at 360px) and grow to 40-44px on wider screens.
-  const template = `minmax(1.5rem, 2rem) repeat(${cols}, minmax(0, 2.75rem))`;
+  // scroll at 360px) and grow to ~44-48px on wider screens.
+  const template = `minmax(1.5rem, 2rem) repeat(${cols}, minmax(0, 3rem))`;
+  // Highlight the target row/column headers to help the child cross-reference.
+  const headerClass = (on: boolean) =>
+    `num flex items-center justify-center rounded-md text-sm sm:text-base font-black ${
+      on ? 'bg-accent text-on-accent' : 'text-white/80'
+    }`;
 
   return (
-    <div className="w-full max-w-[30rem] mx-auto">
-      <p className="mb-1 text-center text-xs text-white/50" aria-hidden="true">
+    <div className="w-full max-w-[34rem] mx-auto">
+      <p className="mb-2 text-center text-sm font-semibold text-white/85" aria-hidden="true">
         {rowLabel} ↓ · {colLabel} →
       </p>
       <div
         role="group"
         aria-label={t('meta.grid.title')}
-        className="grid gap-px w-full justify-center"
+        className="grid gap-[3px] w-full justify-center"
         style={{ gridTemplateColumns: template }}
       >
         <div className="contents" aria-hidden="true">
           <div
-            className="flex items-center justify-center text-[9px] leading-tight text-white/40 text-center"
+            className="flex items-center justify-center text-xs leading-tight text-white/70 text-center"
             title={`${rowLabel} ↓ ${colLabel} →`}
           >
             <span aria-hidden="true">↓→</span>
           </div>
           {Array.from({ length: cols }, (_, c) => (
-            <div
-              key={c}
-              className="aspect-square flex items-center justify-center text-xs font-bold text-white/50"
-            >
+            <div key={c} className={`aspect-square ${headerClass(activeCoordinate?.col === c)}`}>
               {c}
             </div>
           ))}
         </div>
-
         {grid.cells.map((row, r) => (
           <div key={r} className="contents">
-            <div
-              aria-hidden="true"
-              className="flex items-center justify-center text-xs font-bold text-white/50"
-            >
+            <div aria-hidden="true" className={headerClass(activeCoordinate?.row === r)}>
               {r}
             </div>
             {row.map((cell, c) => {
@@ -107,12 +105,11 @@ export function MetaGrid({ grid, activeCoordinate, revealedCoordinates, onCellCl
                     aria-label={`${rowLabel} ${r}, ${colLabel} ${c}: ${cell}`}
                     aria-pressed={revealed || undefined}
                     disabled={!onCellClick}
-                    className={`w-full h-full flex items-center justify-center text-sm sm:text-base font-mono
-                      rounded-[3px] border border-white/10 transition-colors duration-300
-                      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70
-                      ${revealed ? 'bg-green-500/20 text-green-400 font-bold border-green-500/30' : ''}
-                      ${isWrong ? 'bg-red-500/30 text-red-400 border-red-500/50 animate-shake' : ''}
-                      ${!revealed && !isWrong ? 'bg-white/5 text-white/80 hover:bg-white/15' : ''}
+                    className={`num w-full h-full flex items-center justify-center text-sm sm:text-lg font-bold
+                      rounded-md border transition-colors duration-200
+                      ${revealed ? 'accent-gradient text-on-accent font-black border-transparent' : ''}
+                      ${isWrong ? 'bg-red-600 text-white border-red-300 animate-shake' : ''}
+                      ${!revealed && !isWrong ? 'bg-white/10 text-white border-white/10 hover:bg-white/25' : ''}
                       ${onCellClick ? 'cursor-pointer' : 'cursor-default'}`}
                   >
                     {cell}

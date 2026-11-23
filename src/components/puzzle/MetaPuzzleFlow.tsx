@@ -6,8 +6,9 @@ import { fillTemplate, tOr } from './format';
 import { useGameStore, selectMetaDigitsFound } from '../../stores/gameStore';
 import { useTranslation } from '../../i18n/useTranslation';
 import { useTheme } from '../themes/ThemeProvider';
-import { ProgressBar } from '../ui/ProgressBar';
 import { Button } from '../ui/Button';
+import { TopBarSlot } from '../ui/TopBar';
+import { DigitChips } from './DigitChips';
 import type { Puzzle } from '../../lib/types';
 
 interface MetaPuzzleFlowProps {
@@ -115,102 +116,103 @@ export function MetaPuzzleFlow({ puzzle }: MetaPuzzleFlowProps) {
   const pairTitle = (axis: string) => `${t('meta.coordinatePair')} ${activePairIndex + 1} — ${axis}`;
   const coordinateHint = tOr(t, 'puzzle.lastDigitHintCoordinate', t('puzzle.multiplicationHint'));
 
+  const chipDigits = meta.coordinates.map((c, i) => (metaCoordinatesRevealed.includes(i) ? c.pinDigit : null));
+  const nextButton = (onClick: () => void) => (
+    <Button size="lg" onClick={onClick} className="mt-6 w-full sm:w-auto sm:min-w-64">
+      {t('story.next')}
+    </Button>
+  );
+
   return (
-    <div className="min-h-dvh px-3 py-4 sm:p-6 max-w-2xl mx-auto">
-      <div className="mb-6">
-        <ProgressBar current={metaCoordinatesRevealed.length} total={totalPairs} />
-        <p className="text-center text-white/50 text-sm mt-2">
-          {phase === 'intro'
-            ? `0 / ${totalPairs}`
-            : `${t('meta.coordinatePair')} ${Math.min(activePairIndex + 1, totalPairs)} ${t('story.of')} ${totalPairs}`}
+    <div className="screen-h w-full max-w-2xl mx-auto px-4 pt-4 pb-10 sm:pt-6">
+      <TopBarSlot>
+        <DigitChips digits={chipDigits} activeIndex={phase === 'intro' || phase === 'all-complete' ? null : activePairIndex} />
+      </TopBarSlot>
+
+      {phase !== 'intro' && phase !== 'all-complete' && (
+        <p className="mb-3 flex items-center justify-center gap-2 text-white/90 font-bold">
+          <span aria-hidden="true">🗺️</span>
+          <span className="num">
+            {`${t('meta.coordinatePair')} ${Math.min(activePairIndex + 1, totalPairs)} ${t('story.of')} ${totalPairs}`}
+          </span>
         </p>
-      </div>
+      )}
 
       <div className={`transition-all duration-300 ease-out ${fadeClass(visible)}`}>
         {phase === 'intro' && (
-          <div className="flex flex-col items-center justify-center mt-8">
-            <StoryCard emoji={theme.emoji} themeConfig={theme}>
-              <p className="text-white/90 text-lg leading-relaxed">{metaText('intro')}</p>
+          <div className="flex flex-col items-center pt-4 sm:pt-10">
+            <StoryCard emoji={theme.emoji}>
+              <p className="text-white text-xl sm:text-2xl leading-relaxed font-medium">{metaText('intro')}</p>
             </StoryCard>
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={() => run(() => setPhase('solve-row'))}
-              className="mt-8 text-lg px-10 py-5 animate-pulse"
-            >
-              {t('story.next')}
-            </Button>
+            {nextButton(() => run(() => setPhase('solve-row')))}
           </div>
         )}
 
         {(phase === 'solve-row' || phase === 'solve-col') && (
-          <div>
-            <StoryCard emoji={theme.emoji} themeConfig={theme} compact>
-              <p className="text-white/80 text-base leading-relaxed">
+          <div className="space-y-4">
+            <StoryCard emoji={theme.emoji} compact>
+              <p className="text-white text-base sm:text-lg leading-snug">
                 {metaText(phase === 'solve-row' ? 'findRow' : 'findCol')}
               </p>
             </StoryCard>
-            <div className="mt-6">
-              {phase === 'solve-row' ? (
-                <PuzzleSection
-                  key={rowChainIdx}
-                  chain={puzzle.chains[rowChainIdx]}
-                  chainIndex={rowChainIdx}
-                  answers={answers}
-                  onAnswer={handleAnswer}
-                  isCompleted={completedChains.includes(rowChainIdx)}
-                  title={pairTitle(rowName)}
-                  resultLabel={rowName}
-                  hint={coordinateHint}
-                />
-              ) : (
-                <PuzzleSection
-                  key={colChainIdx}
-                  chain={puzzle.chains[colChainIdx]}
-                  chainIndex={colChainIdx}
-                  answers={answers}
-                  onAnswer={handleAnswer}
-                  isCompleted={completedChains.includes(colChainIdx)}
-                  title={pairTitle(colName)}
-                  resultLabel={colName}
-                  hint={coordinateHint}
-                />
-              )}
-            </div>
+            {phase === 'solve-row' ? (
+              <PuzzleSection
+                key={rowChainIdx}
+                chain={puzzle.chains[rowChainIdx]}
+                chainIndex={rowChainIdx}
+                answers={answers}
+                onAnswer={handleAnswer}
+                isCompleted={completedChains.includes(rowChainIdx)}
+                title={pairTitle(rowName)}
+                resultLabel={rowName}
+                hint={coordinateHint}
+              />
+            ) : (
+              <PuzzleSection
+                key={colChainIdx}
+                chain={puzzle.chains[colChainIdx]}
+                chainIndex={colChainIdx}
+                answers={answers}
+                onAnswer={handleAnswer}
+                isCompleted={completedChains.includes(colChainIdx)}
+                title={pairTitle(colName)}
+                resultLabel={colName}
+                hint={coordinateHint}
+              />
+            )}
           </div>
         )}
 
         {phase === 'coordinate-reveal' && (
-          <div className="flex flex-col items-center justify-center mt-8">
-            <StoryCard emoji={theme.emoji} themeConfig={theme} glow>
-              <div className="text-center">
-                <p className="text-green-400 text-xl font-bold mb-3">
-                  {metaText('coordinateFound', { row: coord.row, col: coord.col })}
-                </p>
-                <div className="flex items-center justify-center gap-4 text-2xl font-mono">
-                  <span className="text-yellow-400">({coord.row}, {coord.col})</span>
-                </div>
+          <div className="flex flex-col items-center pt-4 sm:pt-10">
+            <StoryCard emoji={theme.emoji} glow>
+              <p className="text-accent text-2xl font-black mb-5">
+                {metaText('coordinateFound', { row: coord.row, col: coord.col })}
+              </p>
+              <div className="flex items-stretch justify-center gap-3">
+                {[
+                  [rowName, coord.row],
+                  [colName, coord.col],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex flex-col items-center gap-1 rounded-2xl bg-white/10 px-5 py-3 min-w-28">
+                    <span className="text-white/90 font-bold">{label}</span>
+                    <span className="num text-5xl font-black text-accent animate-digit-reveal">{value}</span>
+                  </div>
+                ))}
               </div>
             </StoryCard>
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={() => run(() => setPhase('grid-lookup'))}
-              className="mt-8 text-lg px-10 py-5 animate-pulse"
-            >
-              {t('story.next')}
-            </Button>
+            {nextButton(() => run(() => setPhase('grid-lookup')))}
           </div>
         )}
 
         {phase === 'grid-lookup' && (
-          <div className="flex flex-col items-center mt-4">
-            <StoryCard emoji={theme.emoji} themeConfig={theme} compact>
-              <p className="text-white/80 text-base leading-relaxed">
+          <div className="flex flex-col items-center gap-4">
+            <StoryCard emoji={theme.emoji} compact>
+              <p className="text-white text-base sm:text-lg leading-snug">
                 {metaText('checkGrid', { row: coord.row, col: coord.col })}
               </p>
             </StoryCard>
-            <div className="mt-6 w-full">
+            <div className="surface w-full rounded-3xl p-2 sm:p-4">
               <MetaGrid
                 grid={meta}
                 activeCoordinate={{ row: coord.row, col: coord.col }}
@@ -221,51 +223,40 @@ export function MetaPuzzleFlow({ puzzle }: MetaPuzzleFlowProps) {
                 disabled={!visible}
               />
             </div>
-            <p className="text-white/50 text-sm mt-4 text-center" aria-live="polite">
+            <p className="text-white/90 text-base font-semibold text-center" aria-live="polite">
               {t('meta.grid.findDigit')} ({rowName} {coord.row}, {colName} {coord.col})
             </p>
           </div>
         )}
 
         {phase === 'digit-found' && (
-          <div className="flex flex-col items-center justify-center mt-8" aria-live="polite">
-            <StoryCard emoji={theme.emoji} themeConfig={theme} glow>
-              <div className="text-center">
-                <p className="text-green-400 text-xl font-bold mb-3">
-                  {metaText('digitFound', { digit: coord.pinDigit })}
-                </p>
-                <span className="text-4xl font-bold text-green-400 animate-digit-reveal inline-block">
-                  {coord.pinDigit}
-                </span>
-              </div>
+          <div className="flex flex-col items-center pt-4 sm:pt-10" aria-live="polite">
+            <StoryCard emoji={theme.emoji} glow>
+              <p className="text-accent text-2xl font-black mb-5">
+                {metaText('digitFound', { digit: coord.pinDigit })}
+              </p>
+              <span className="num inline-flex w-24 h-28 rounded-3xl accent-gradient text-on-accent items-center justify-center text-7xl font-black shadow-xl shadow-black/30 animate-digit-reveal">
+                {coord.pinDigit}
+              </span>
             </StoryCard>
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={handleNextPair}
-              className="mt-8 text-lg px-10 py-5 animate-pulse"
-            >
-              {t('story.next')}
-            </Button>
+            {nextButton(handleNextPair)}
           </div>
         )}
 
         {phase === 'all-complete' && (
-          <div className="flex flex-col items-center justify-center mt-8">
-            <StoryCard emoji={theme.emoji} themeConfig={theme} glow>
-              <div className="text-center">
-                <p className="text-green-400 text-xl font-bold mb-4">{t('puzzle.completed')}</p>
-                <div className="flex items-center justify-center gap-3">
-                  {digitsFound.map((digit, idx) => (
-                    <span
-                      key={idx}
-                      className="text-3xl font-bold text-green-400 animate-bounce"
-                      style={{ animationDelay: `${idx * 150}ms` }}
-                    >
-                      {digit}
-                    </span>
-                  ))}
-                </div>
+          <div className="flex flex-col items-center pt-4 sm:pt-10">
+            <StoryCard emoji={theme.emoji} glow>
+              <p className="text-accent text-2xl sm:text-3xl font-black mb-5">{t('puzzle.completed')}</p>
+              <div className="flex items-center justify-center gap-2 sm:gap-3">
+                {digitsFound.map((digit, idx) => (
+                  <span
+                    key={idx}
+                    className="num inline-flex w-16 h-20 sm:w-20 sm:h-24 rounded-2xl accent-gradient text-on-accent items-center justify-center text-5xl sm:text-6xl font-black shadow-lg shadow-black/30 animate-digit-reveal"
+                    style={{ animationDelay: `${idx * 150}ms` }}
+                  >
+                    {digit}
+                  </span>
+                ))}
               </div>
             </StoryCard>
           </div>

@@ -38,7 +38,7 @@ export function PrintSection({ chain, chainIndex, showAnswers, hideHeader, foote
 
   const label = footerLabel ?? t('puzzle.pinDigit');
   const blank = (
-    <span className="inline-block w-16 border-b-2 border-white/40 print:border-gray-500 text-center">
+    <span className="inline-block w-16 border-b-2 border-gray-500 text-center">
       &nbsp;
     </span>
   );
@@ -50,20 +50,20 @@ export function PrintSection({ chain, chainIndex, showAnswers, hideHeader, foote
   return (
     <div className="print-section mb-6 break-inside-avoid">
       {!hideHeader && (
-        <h3 className="font-bold text-lg mb-3 text-white/90 print:text-gray-800">
+        <h3 className="font-bold text-lg mb-3 text-gray-800">
           {t('puzzle.digit')} {chainIndex + 1}
         </h3>
       )}
       {chain.useLastDigit && chain.chainMode !== 'onesDigit' && !showAnswers && (
-        <p className="text-xs text-white/75 print:text-gray-600 italic mb-2">{t('puzzle.multiplicationHint')}</p>
+        <p className="text-xs text-gray-600 italic mb-2">{t('puzzle.multiplicationHint')}</p>
       )}
       {hasOnesDigitCarry && chainedSteps && !showAnswers && (
-        <div className="text-xs text-white/75 print:text-gray-600 italic mb-2">
+        <div className="text-xs text-gray-600 italic mb-2">
           <p>{t('print.onesDigitInstruction')}</p>
           <div className="flex items-center gap-1 mt-1 font-mono not-italic text-[10px]" aria-hidden="true">
-            <span>3 {PRINT_OP_SYMBOLS['*']} 9 = 2<span className="font-bold underline text-white print:text-gray-800">7</span></span>
+            <span>3 {PRINT_OP_SYMBOLS['*']} 9 = 2<span className="font-bold underline text-gray-800">7</span></span>
             <span className="mx-1">→</span>
-            <span><span className="font-bold underline text-white print:text-gray-800">7</span> {PRINT_OP_SYMBOLS['*']} 4 = ...</span>
+            <span><span className="font-bold underline text-gray-800">7</span> {PRINT_OP_SYMBOLS['*']} 4 = ...</span>
           </div>
         </div>
       )}
@@ -82,12 +82,12 @@ export function PrintSection({ chain, chainIndex, showAnswers, hideHeader, foote
           </div>
         ))}
       </div>
-      <div className="mt-2 text-sm text-white/75 print:text-gray-600">
+      <div className="mt-2 text-sm text-gray-600">
         → {label}:{' '}
         {showAnswers ? (
           <span className="font-bold text-lg">{chain.targetDigit}</span>
         ) : (
-          <span className="inline-block w-8 border-b-2 border-white/40 print:border-gray-500">&nbsp;</span>
+          <span className="inline-block w-8 border-b-2 border-gray-500">&nbsp;</span>
         )}
       </div>
     </div>

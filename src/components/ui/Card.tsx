@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 interface CardProps {
   children: ReactNode;
@@ -6,22 +6,26 @@ interface CardProps {
   /** Toggle state; exposed as aria-pressed when the card is interactive. */
   selected?: boolean;
   onClick?: () => void;
-  glow?: boolean;
-  shine?: boolean;
-  shineColor?: string;
   /** Accessible name override for interactive cards. */
   ariaLabel?: string;
+  /** Sets a local `data-theme`, so the card previews another theme's palette. */
+  dataTheme?: string;
 }
 
-export function Card({ children, className = '', selected, onClick, glow, shine, shineColor, ariaLabel }: CardProps) {
-  const classes = `rounded-2xl bg-white/8 backdrop-blur-sm p-5 transition-all duration-200
-    ${onClick ? 'cursor-pointer hover:bg-white/15 active:scale-[0.98]' : ''}
-    ${selected ? 'ring-2 ring-white/60 scale-[1.02] bg-white/12' : ''}
-    ${glow ? 'animate-glow' : ''}
-    ${shine ? 'animate-shine-border' : ''}
-    ${className}`;
-  const style = shine && shineColor ? ({ '--shine-color': shineColor } as CSSProperties) : undefined;
+/** Check badge shown on selected cards (colour + shape, not colour alone). */
+function CheckBadge() {
+  return (
+    <span
+      aria-hidden="true"
+      className="absolute -top-2 -right-2 z-10 w-8 h-8 rounded-full flex items-center justify-center
+        bg-accent text-on-accent text-base font-black shadow-md ring-3 ring-page animate-pop"
+    >
+      ✓
+    </span>
+  );
+}
 
+export function Card({ children, className = '', selected, onClick, ariaLabel, dataTheme }: CardProps) {
   if (onClick) {
     return (
       <button
@@ -29,16 +33,23 @@ export function Card({ children, className = '', selected, onClick, glow, shine,
         onClick={onClick}
         aria-pressed={selected}
         aria-label={ariaLabel}
-        className={`block w-full text-left text-inherit focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/80 ${classes}`}
-        style={style}
+        data-theme={dataTheme}
+        className={`relative block w-full text-left text-inherit rounded-2xl p-4 min-h-16
+          border-2 transition-[transform,background-color,border-color,box-shadow] duration-150
+          cursor-pointer active:scale-[0.98]
+          ${selected
+            ? 'border-accent bg-accent/15 shadow-[0_0_0_4px_color-mix(in_oklab,var(--th-accent)_22%,transparent)]'
+            : 'border-white/15 bg-white/8 hover:bg-white/14 hover:border-white/30'}
+          ${className}`}
       >
+        {selected && <CheckBadge />}
         {children}
       </button>
     );
   }
 
   return (
-    <div className={classes} style={style}>
+    <div data-theme={dataTheme} className={`relative rounded-3xl p-5 surface ${className}`}>
       {children}
     </div>
   );

@@ -25,7 +25,7 @@ export function PrintGrid({ grid }: PrintGridProps) {
             {/* Top-left corner: axis labels (theme-specific, same as on-screen MetaGrid) */}
             <th
               scope="col"
-              className="min-w-10 h-10 px-0.5 text-[9px] leading-tight text-white/75 print:text-gray-600 border border-white/10 print:border-gray-300 font-normal"
+              className="min-w-10 h-10 px-0.5 text-[9px] leading-tight text-gray-600 border border-gray-300 font-normal"
             >
               <span className="block">{rowLabel}↓</span>
               <span className="block">{colLabel}→</span>
@@ -34,7 +34,7 @@ export function PrintGrid({ grid }: PrintGridProps) {
               <th
                 key={c}
                 scope="col"
-                className="w-10 h-10 text-sm font-extrabold text-white/80 print:text-gray-700 border border-white/10 print:border-gray-300"
+                className="w-10 h-10 text-sm font-extrabold text-gray-700 border border-gray-300"
               >
                 {c}
               </th>
@@ -43,17 +43,17 @@ export function PrintGrid({ grid }: PrintGridProps) {
         </thead>
         <tbody>
           {grid.cells.map((row, r) => (
-            <tr key={r} className={r % 2 === 0 ? 'bg-white/[0.03] print:bg-gray-100' : ''}>
+            <tr key={r} className={r % 2 === 0 ? 'bg-gray-100' : ''}>
               <th
                 scope="row"
-                className="w-10 h-10 text-sm font-extrabold text-white/80 print:text-gray-700 border border-white/10 print:border-gray-300"
+                className="w-10 h-10 text-sm font-extrabold text-gray-700 border border-gray-300"
               >
                 {r}
               </th>
               {row.map((cell, c) => (
                 <td
                   key={c}
-                  className="w-10 h-10 border border-white/10 print:border-gray-300 text-white/85 print:text-gray-800"
+                  className="w-10 h-10 border border-gray-300 text-gray-800"
                 >
                   {cell}
                 </td>

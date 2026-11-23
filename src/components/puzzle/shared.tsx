@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Card } from '../ui/Card';
 import { useGameStore } from '../../stores/gameStore';
 import { validateStep } from '../../lib/validator';
 import type { Puzzle } from '../../lib/types';
@@ -10,37 +9,40 @@ import type { Puzzle } from '../../lib/types';
 interface StoryCardProps {
   children: ReactNode;
   emoji: string;
-  themeConfig: { glowColor: string };
+  /** Small inline card (emoji left of the text) shown above the puzzle. */
   compact?: boolean;
+  /** Success styling (chain / digit found). */
   glow?: boolean;
 }
 
-export function StoryCard({ children, emoji, themeConfig, compact, glow }: StoryCardProps) {
-  return (
-    <Card
-      className={`relative overflow-hidden ${glow ? 'ring-2 ring-green-500/50' : ''}`}
-      glow={glow}
-      shine={glow}
-      shineColor="rgba(34,197,94,0.4)"
-    >
-      <div
-        className="absolute inset-0 opacity-10 pointer-events-none"
-        style={{
-          background: `radial-gradient(circle at 50% 50%, ${themeConfig.glowColor}, transparent 70%)`,
-        }}
-      />
-      <div className="relative">
-        <div className={`flex items-start gap-4 ${compact ? '' : 'flex-col items-center text-center'}`}>
-          <span
-            aria-hidden="true"
-            className={compact ? 'text-3xl flex-shrink-0 mt-0.5' : 'text-6xl mb-2 animate-float'}
-          >
-            {emoji}
-          </span>
-          <div className="flex-1">{children}</div>
-        </div>
+export function StoryCard({ children, emoji, compact, glow }: StoryCardProps) {
+  const frame = glow
+    ? 'border-2 border-accent shadow-[0_0_40px_-8px_var(--th-accent)]'
+    : '';
+  if (compact) {
+    return (
+      <div className={`surface rounded-3xl p-4 flex items-start gap-3 ${frame}`}>
+        <span
+          aria-hidden="true"
+          className="shrink-0 w-12 h-12 rounded-2xl bg-accent/20 ring-2 ring-accent/50 flex items-center justify-center text-2xl"
+        >
+          {emoji}
+        </span>
+        <div className="flex-1 min-w-0 self-center">{children}</div>
       </div>
-    </Card>
+    );
+  }
+  return (
+    <div className={`surface w-full rounded-3xl px-5 pt-8 pb-6 sm:px-8 flex flex-col items-center text-center ${frame}`}>
+      <span
+        aria-hidden="true"
+        className="mb-4 w-24 h-24 rounded-full bg-accent/15 ring-4 ring-accent/50 flex items-center justify-center
+          text-6xl shadow-[0_0_48px_-6px_var(--th-accent)] animate-float"
+      >
+        {emoji}
+      </span>
+      <div className="w-full">{children}</div>
+    </div>
   );
 }
 
