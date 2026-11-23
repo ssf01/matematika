@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
+import type { ReactNode } from 'react';
 
 interface SparklesProps {
-  children: React.ReactNode;
+  children: ReactNode;
   color?: string;
   count?: number;
 }

@@ -14,50 +14,41 @@ export const cyrillicToLatinMap: Record<string, string> = {
   'ц': 'c', 'ч': 'č', 'ш': 'š',
 };
 
-const digraphs = new Set(['Љ', 'љ', 'Њ', 'њ', 'Џ', 'џ']);
+/** Uppercase Cyrillic letters that map to two Latin letters. */
+const upperDigraphs = new Set(['Љ', 'Њ', 'Џ']);
 
-function isAllCapsContext(prev: string, next: string): boolean {
-  const surrounding = prev + next;
-  const cyrillicLetters = surrounding.match(/[\u0400-\u04FF]/g);
-  if (!cyrillicLetters || cyrillicLetters.length === 0) return false;
-  return cyrillicLetters.every(
-    (ch) => ch === ch.toUpperCase() && ch !== ch.toLowerCase(),
-  );
+const isLetter = (ch: string) => ch.toLowerCase() !== ch.toUpperCase();
+const isUpper = (ch: string) => isLetter(ch) && ch === ch.toUpperCase();
+
+/**
+ * True when the word containing position `i` (a run of letters) is written in
+ * all caps and has at least one other letter. A lone capital digraph ("Њ") or
+ * one starting a title-case word ("Љиљана") is not all-caps.
+ */
+function isAllCapsWord(text: string, i: number): boolean {
+  let start = i;
+  while (start > 0 && isLetter(text[start - 1])) start--;
+  let end = i + 1;
+  while (end < text.length && isLetter(text[end])) end++;
+  if (end - start < 2) return false;
+  for (let j = start; j < end; j++) {
+    if (!isUpper(text[j])) return false;
+  }
+  return true;
 }
 
 export function transliterate(text: string): string {
   let result = '';
-  let i = 0;
-
-  while (i < text.length) {
+  for (let i = 0; i < text.length; i++) {
     const char = text[i];
-
-    if (digraphs.has(char)) {
-      const mapped = cyrillicToLatinMap[char];
-      if (char === char.toUpperCase() && char !== char.toLowerCase()) {
-        const prev = text.slice(0, i);
-        const next = text.slice(i + 1);
-        if (isAllCapsContext(prev, next)) {
-          result += mapped.toUpperCase();
-        } else {
-          result += mapped;
-        }
-      } else {
-        result += mapped;
-      }
-      i++;
-      continue;
+    const mapped = cyrillicToLatinMap[char];
+    if (mapped === undefined) {
+      result += char;
+    } else if (upperDigraphs.has(char) && isAllCapsWord(text, i)) {
+      result += mapped.toUpperCase();
+    } else {
+      result += mapped;
     }
-
-    if (cyrillicToLatinMap[char] !== undefined) {
-      result += cyrillicToLatinMap[char];
-      i++;
-      continue;
-    }
-
-    result += char;
-    i++;
   }
-
   return result;
 }

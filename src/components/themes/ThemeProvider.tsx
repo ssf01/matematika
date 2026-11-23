@@ -1,4 +1,5 @@
-import React, { createContext, useContext } from 'react';
+import { createContext, useContext } from 'react';
+import type { ReactNode } from 'react';
 import type { Theme, ThemeConfig } from '../../lib/types';
 import { THEME_CONFIGS } from '../../lib/constants';
 
@@ -9,7 +10,7 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-export function ThemeProvider({ themeId, children }: { themeId: Theme; children: React.ReactNode }) {
+export function ThemeProvider({ themeId, children }: { themeId: Theme; children: ReactNode }) {
   const theme = THEME_CONFIGS[themeId];
   return (
     <ThemeContext.Provider value={{ theme, themeId }}>
