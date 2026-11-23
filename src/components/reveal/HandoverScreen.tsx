@@ -1,4 +1,3 @@
-import React from 'react';
 import { useGameStore } from '../../stores/gameStore';
 import { useTranslation } from '../../i18n/useTranslation';
 import { useTheme } from '../themes/ThemeProvider';

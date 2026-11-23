@@ -1,5 +1,3 @@
-import React from 'react';
-
 interface DigitRevealProps {
   digit: string;
   index: number;
