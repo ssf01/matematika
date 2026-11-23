@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 // Two projects: pure logic (src/lib, src/i18n *.test.ts) runs in the fast `node`
 // environment; everything else (component tests, *.test.tsx) runs in jsdom.
+// Inline projects inherit the root config by default since Vitest 5 (`extends: true`).
 const nodeTests = ['src/lib/**/*.test.ts', 'src/i18n/**/*.test.ts'];
 
 export default defineConfig({
@@ -9,7 +10,6 @@ export default defineConfig({
     globals: true,
     projects: [
       {
-        extends: true,
         test: {
           name: 'node',
           environment: 'node',
@@ -17,7 +17,6 @@ export default defineConfig({
         },
       },
       {
-        extends: true,
         test: {
           name: 'dom',
           environment: 'jsdom',

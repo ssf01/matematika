@@ -105,7 +105,7 @@ GitHub Actions (`.github/workflows/ci.yml`) na svaki push/PR ka `main` pokreće:
 - **React 19** — interaktivne komponente (islands)
 - **Tailwind CSS 4** — stilizovanje
 - **Zustand 5** — upravljanje stanjem (sessionStorage)
-- **Vitest 4** + Testing Library — testovi
+- **Vitest 5** + Testing Library — testovi
 - **ESLint 9** (typescript-eslint, react-hooks, jsx-a11y) — linting
 - **Bun** — package manager i runtime
 - **TypeScript** (strict) — type safety
