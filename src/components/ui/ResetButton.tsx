@@ -67,18 +67,19 @@ export function ResetButton() {
         title={t('reset.tooltip')}
         aria-label={t('a11y.reset')}
         aria-haspopup="dialog"
-        className="fixed top-4 left-4 z-50 w-11 h-11 rounded-full flex items-center justify-center
-          bg-white/10 hover:bg-white/20 text-white/90 hover:text-white
-          backdrop-blur-sm border border-white/10 transition-all duration-200 no-print
-          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80
-          text-lg"
+        className="no-print w-12 h-12 rounded-full flex items-center justify-center
+          bg-white/12 hover:bg-white/22 text-white border border-white/20 transition-colors duration-150"
       >
-        <span aria-hidden="true">&#x2302;</span>
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 10.5 12 3l9 7.5" />
+          <path d="M5.5 9v11h13V9" />
+          <path d="M10 20v-5.5h4V20" />
+        </svg>
       </button>
 
       {open && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 backdrop-blur-sm p-4"
           onClick={(e) => {
             if (e.target === e.currentTarget) close();
           }}
@@ -90,20 +91,22 @@ export function ResetButton() {
             aria-modal="true"
             aria-labelledby={titleId}
             onKeyDown={trapFocus}
-            className="bg-gray-900/95 border border-white/15 rounded-2xl p-8 mx-4 max-w-sm w-full
-              shadow-2xl text-center"
+            className="bg-page border border-white/20 rounded-3xl p-7 max-w-sm w-full
+              shadow-2xl text-center animate-rise-in"
           >
-            <p id={titleId} className="text-white text-lg font-medium mb-6">
+            <div aria-hidden="true" className="mx-auto mb-4 w-14 h-14 rounded-full bg-white/12 flex items-center justify-center text-3xl">
+              🏠
+            </div>
+            <p id={titleId} className="text-white text-xl font-bold mb-6">
               {t('reset.confirm')}
             </p>
             <div className="flex gap-3 justify-center">
               <button
                 type="button"
                 onClick={handleConfirm}
-                className="px-6 py-2.5 rounded-xl font-semibold text-base min-h-[44px]
-                  bg-red-500/20 hover:bg-red-500/30 text-red-200 border border-red-500/30
-                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80
-                  transition-all duration-200 active:scale-95 min-w-[80px]"
+                className="flex-1 px-6 rounded-2xl font-bold text-lg min-h-13
+                  bg-red-500/25 hover:bg-red-500/35 text-red-100 border border-red-400/50
+                  transition-colors duration-150 active:scale-95"
               >
                 {t('reset.yes')}
               </button>
@@ -111,10 +114,9 @@ export function ResetButton() {
                 ref={cancelRef}
                 type="button"
                 onClick={close}
-                className="px-6 py-2.5 rounded-xl font-semibold text-base min-h-[44px]
-                  bg-white/20 hover:bg-white/30 text-white border border-white/20
-                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80
-                  transition-all duration-200 active:scale-95 min-w-[80px]"
+                className="flex-1 px-6 rounded-2xl font-bold text-lg min-h-13
+                  accent-gradient text-on-accent shadow-lg shadow-black/25
+                  transition-[filter] duration-150 hover:brightness-110 active:scale-95"
               >
                 {t('reset.no')}
               </button>

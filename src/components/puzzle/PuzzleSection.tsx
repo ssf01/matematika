@@ -2,13 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { MathStep } from './MathStep';
 import type { StepState } from './MathStep';
 import { CorrectAnswerEffect } from './CorrectAnswerEffect';
-import { BorderBeam } from '../ui/BorderBeam';
 import { Sparkles } from '../ui/Sparkles';
 import { useTheme } from '../themes/ThemeProvider';
 import { useTranslation } from '../../i18n/useTranslation';
 import { isStepSolved } from './shared';
 import type { PuzzleChain } from '../../lib/types';
-import { Card } from '../ui/Card';
 
 interface PuzzleSectionProps {
   chain: PuzzleChain;
@@ -49,29 +47,45 @@ export function PuzzleSection({
   // ('full', 'onesDigit' or 'independent'): the first unsolved step is active.
   const solved = chain.steps.map((s, i) => isStepSolved(answers, chainIndex, i, s.result));
   const activeStep = solved.findIndex((done) => !done);
-
   const stateOf = (i: number): StepState =>
     solved[i] && (activeStep === -1 || i < activeStep) ? 'done' : i === activeStep ? 'active' : 'locked';
+  const doneCount = activeStep === -1 ? chain.steps.length : activeStep;
+  const total = chain.steps.length;
 
   const heading = title ?? `${t('puzzle.digit')} ${chainIndex + 1}`;
   const finalLabel = resultLabel ?? t('puzzle.digit');
 
   return (
-    <Card
-      className={`relative transition-all duration-300 overflow-hidden ${isCompleted ? 'ring-2 ring-green-500/50' : ''}`}
-      glow={isCompleted}
-      shine={isCompleted}
-      shineColor="rgba(34,197,94,0.4)"
+    <section
+      className={`surface relative rounded-3xl p-3 sm:p-5 transition-[border-color,box-shadow] duration-300
+        ${isCompleted ? 'border-2 border-success! shadow-[0_0_40px_-10px_var(--color-success)]' : ''}`}
     >
-      {!isCompleted && activeStep >= 0 && (
-        <BorderBeam colorFrom={theme.accentColor} colorTo={theme.glowColor} duration="3s" />
-      )}
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-bold text-lg">{heading}</h3>
-        {isCompleted && <span className="text-green-400 text-xl" aria-hidden="true">✓</span>}
+      <div className="flex items-center justify-between gap-3 px-1 mb-2">
+        <h3 className="font-black text-xl sm:text-2xl flex items-center gap-2 min-w-0">
+          <span aria-hidden="true" className="text-2xl">{theme.emoji}</span>
+          <span className="truncate">{heading}</span>
+        </h3>
+        <span
+          className={`num shrink-0 rounded-full px-3 py-1 text-base font-black
+            ${isCompleted ? 'bg-success text-green-950' : 'bg-white/12 text-white'}`}
+        >
+          <span aria-hidden="true">
+            {isCompleted ? '✓ ' : ''}
+            {doneCount}/{total}
+          </span>
+          <span className="sr-only">{t('a11y.stepsSolved', { done: doneCount, total })}</span>
+        </span>
       </div>
 
-      <div className="space-y-3">
+      {/* Decorative per-chain progress (the pill above carries the accessible text). */}
+      <div aria-hidden="true" className="mx-1 mb-3 h-2 rounded-full bg-white/10 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-[width] duration-500 ease-out ${isCompleted ? 'bg-success' : 'accent-gradient'}`}
+          style={{ width: `${Math.round((doneCount / total) * 100)}%` }}
+        />
+      </div>
+
+      <div className="space-y-2">
         {chain.steps.map((step, stepIdx) => (
           <MathStep
             key={stepIdx}
@@ -85,15 +99,20 @@ export function PuzzleSection({
       </div>
 
       {chain.useLastDigit && !isCompleted && (
-        <p className="mt-4 text-xs text-white/50 italic">{hint ?? t('puzzle.multiplicationHint')}</p>
+        <p className="mt-4 mx-1 flex gap-2 items-start rounded-2xl bg-accent/12 border border-accent/40 px-3 py-2 text-base text-white">
+          <span aria-hidden="true">💡</span>
+          <span>{hint ?? t('puzzle.multiplicationHint')}</span>
+        </p>
       )}
 
       <div aria-live="polite">
         {isCompleted && (
-          <div className="relative mt-3 pt-3 border-t border-white/10 text-center">
-            <span className="text-white/60 text-sm">{finalLabel} = </span>
-            <Sparkles color="#22c55e" count={4}>
-              <span className="text-2xl font-bold text-green-400">{chain.targetDigit}</span>
+          <div className="relative mt-4 pt-4 border-t border-white/15 flex items-center justify-center gap-3">
+            <span className="text-white/90 text-lg font-bold">{finalLabel} =</span>
+            <Sparkles color="var(--th-accent)" count={4}>
+              <span className="num inline-flex w-14 h-16 rounded-2xl accent-gradient text-on-accent items-center justify-center text-4xl font-black animate-digit-reveal">
+                {chain.targetDigit}
+              </span>
             </Sparkles>
             {justCompleted && (
               <CorrectAnswerEffect emojis={theme.rewardEmojis} burst onComplete={endBurst} />
@@ -101,6 +120,6 @@ export function PuzzleSection({
           </div>
         )}
       </div>
-    </Card>
+    </section>
   );
 }

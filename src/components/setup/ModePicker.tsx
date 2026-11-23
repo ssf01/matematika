@@ -22,16 +22,22 @@ export function ModePicker() {
   const setMode = useGameStore((s) => s.setMode);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       {modes.map(({ id, emoji, key, descKey }) => (
         <div key={id} data-mode={id}>
           <Card selected={mode === id} onClick={() => setMode(id)}>
             <div className="flex items-center gap-4">
-              <div className="text-3xl w-16 shrink-0 text-center whitespace-nowrap" aria-hidden="true">{emoji}</div>
-              <div>
-                <div className="font-semibold text-lg">{t(key)}</div>
-                <div className="text-white/60 text-sm">{t(descKey)}</div>
-              </div>
+              <span
+                aria-hidden="true"
+                className={`shrink-0 w-16 h-14 rounded-2xl bg-white/10 flex items-center justify-center whitespace-nowrap
+                  ${[...emoji].length > 2 ? 'text-xl tracking-tighter' : 'text-3xl'}`}
+              >
+                {emoji}
+              </span>
+              <span className="min-w-0">
+                <span className="block font-bold text-xl">{t(key)}</span>
+                <span className="block text-white/80 text-base leading-snug">{t(descKey)}</span>
+              </span>
             </div>
           </Card>
         </div>

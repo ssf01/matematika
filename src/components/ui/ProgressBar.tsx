@@ -19,10 +19,10 @@ export function ProgressBar({ current, total, className = '', label }: ProgressB
       aria-valuemax={total}
       aria-valuenow={current}
       aria-valuetext={`${current} / ${total}`}
-      className={`w-full bg-white/10 rounded-full h-3 overflow-hidden ${className}`}
+      className={`w-full bg-white/12 rounded-full h-3 overflow-hidden ${className}`}
     >
       <div
-        className="h-full bg-gradient-to-r from-green-400 to-emerald-500 rounded-full transition-all duration-500 ease-out"
+        className="h-full accent-gradient rounded-full transition-[width] duration-500 ease-out"
         style={{ width: `${pct}%` }}
       />
     </div>

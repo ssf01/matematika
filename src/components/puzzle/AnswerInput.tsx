@@ -110,7 +110,7 @@ export function AnswerInput({ expected, onCorrect, label, autoFocus }: AnswerInp
     status === 'wrong' ? t('puzzle.incorrect') : status === 'cooldown' ? t('puzzle.cooldown') : '';
 
   return (
-    <div className="relative inline-flex items-center gap-1">
+    <div className="relative inline-flex items-center gap-2 justify-self-start">
       <div className="relative inline-flex flex-col items-center">
         <input
           ref={inputRef}
@@ -127,24 +127,27 @@ export function AnswerInput({ expected, onCorrect, label, autoFocus }: AnswerInp
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder={status === 'cooldown' ? '⏳' : '?'}
-          className={`w-20 h-14 text-2xl font-bold text-center rounded-lg transition-all duration-200
-            bg-white/10 border-2 text-white placeholder:text-white/30
-            focus:outline-none focus:ring-2 focus:ring-white/30
+          className={`num w-20 sm:w-24 h-16 text-3xl sm:text-4xl font-black text-center rounded-2xl border-[3px]
+            transition-[border-color,background-color,box-shadow] duration-150 caret-gray-900
+            placeholder:text-gray-400 focus:outline-none
+            focus:shadow-[0_0_0_5px_color-mix(in_oklab,var(--th-accent)_45%,transparent)]
             ${status === 'wrong'
-              ? 'animate-shake !border-red-500 !bg-red-500/20 !text-red-400 !ring-red-500/30'
+              ? 'animate-shake border-red-500 bg-red-50 text-red-700'
               : status === 'cooldown'
-                ? 'border-amber-400/50 bg-amber-400/10 cursor-wait'
-                : 'border-white/20 focus:border-white/50'}`}
+                ? 'border-amber-400 bg-amber-50 text-amber-900 cursor-wait'
+                : 'border-white bg-white text-gray-900'}`}
         />
         <span
           role="status"
           aria-live="polite"
-          className={`absolute top-full mt-1 text-xs font-semibold whitespace-nowrap z-10
-            ${status === 'cooldown' ? 'text-amber-300' : 'text-red-400'}`}
+          className={`absolute top-full mt-2 right-0 z-10 text-sm font-bold leading-tight w-max max-w-[min(15rem,70vw)] text-right rounded-lg
+            ${message ? 'px-2.5 py-1 shadow-md' : ''}
+            ${status === 'cooldown' ? 'bg-amber-300 text-amber-950' : 'bg-red-600 text-white'}`}
         >
           {message}
         </span>
       </div>
+
       {/* Explicit check button: on tablets the numeric pad may have no Enter key */}
       {value && status === 'idle' && (
         <button
@@ -153,9 +156,9 @@ export function AnswerInput({ expected, onCorrect, label, autoFocus }: AnswerInp
           // Keep focus in the input so the on-screen keyboard stays open.
           onPointerDown={(e) => e.preventDefault()}
           aria-label={t('puzzle.check')}
-          className="w-11 h-11 rounded-lg bg-white/15 hover:bg-white/25 text-white/70
-            hover:text-white flex items-center justify-center transition-all duration-200
-            active:scale-90 text-lg font-bold flex-shrink-0"
+          className="w-12 h-16 rounded-2xl accent-gradient text-on-accent shadow-md shadow-black/25
+            flex items-center justify-center text-2xl font-black flex-shrink-0
+            transition-[filter] duration-150 hover:brightness-110 active:scale-90 animate-pop"
         >
           ✓
         </button>

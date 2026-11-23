@@ -11,10 +11,8 @@ export function ScriptToggle() {
       type="button"
       onClick={() => setScript(target)}
       aria-label={t('a11y.switchScript', { target: t(`script.${target}`) })}
-      className="fixed top-4 right-4 z-50 px-3 py-1.5 rounded-full text-sm font-medium min-h-[44px] min-w-[44px]
-        bg-white/10 hover:bg-white/20 text-white/90 hover:text-white
-        backdrop-blur-sm border border-white/10 transition-all duration-200 no-print
-        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+      className="no-print h-12 min-w-12 px-3 rounded-full text-sm font-bold tracking-wide
+        bg-white/12 hover:bg-white/22 text-white border border-white/20 transition-colors duration-150"
     >
       {/* The label is written in the script it switches to, so it bypasses transliteration. */}
       <span lang={SCRIPT_LANG[target]}>{lookup(`script.${target}Short`)}</span>

@@ -1,22 +1,24 @@
 import { useMemo } from 'react';
 
-const COLORS = ['#ff6b6b', '#feca57', '#48dbfb', '#ff9ff3', '#54a0ff', '#5f27cd', '#01a3a4', '#f368e0', '#ff9f43', '#00d2d3'];
+// Theme accents first, then a few fixed party colours.
+const COLORS = ['var(--th-accent)', 'var(--th-accent-2)', '#ff6b6b', '#feca57', '#48dbfb', '#ff9ff3', '#ffffff'];
 
 export function CelebrationOverlay() {
   const pieces = useMemo(() =>
-    Array.from({ length: 40 }).map((_, i) => ({
+    Array.from({ length: 48 }).map((_, i) => ({
       id: i,
       color: COLORS[i % COLORS.length],
       left: Math.random() * 100,
-      size: Math.random() * 10 + 6,
-      delay: Math.random() * 3,
-      duration: Math.random() * 2 + 2,
+      size: Math.random() * 10 + 7,
+      delay: Math.random() * 2.5,
+      duration: Math.random() * 2 + 2.5,
       rotation: Math.random() * 360,
+      round: i % 3 === 0,
     })),
   []);
 
   return (
-    <div className="fixed inset-0 z-40 pointer-events-none overflow-hidden">
+    <div className="fixed inset-0 z-30 pointer-events-none overflow-hidden" aria-hidden="true">
       {pieces.map((p) => (
         <div
           key={p.id}
@@ -25,9 +27,9 @@ export function CelebrationOverlay() {
             left: `${p.left}%`,
             top: '-20px',
             width: `${p.size}px`,
-            height: `${p.size * 0.6}px`,
+            height: `${p.round ? p.size : p.size * 0.5}px`,
             backgroundColor: p.color,
-            borderRadius: '2px',
+            borderRadius: p.round ? '50%' : '2px',
             animationDelay: `${p.delay}s`,
             animationDuration: `${p.duration}s`,
             transform: `rotate(${p.rotation}deg)`,

@@ -94,10 +94,10 @@ export function PinInput() {
           onKeyDown={(e) => handleKeyDown(i, e)}
           onPaste={(e) => handlePaste(i, e)}
           onFocus={(e) => e.target.select()}
-          className="w-14 h-18 sm:w-16 sm:h-20 text-4xl text-center font-bold rounded-xl
-            bg-white/10 border-2 border-white/20 text-white
-            focus:border-white/60 focus:outline-none focus:ring-2 focus:ring-white/30
-            transition-all duration-200"
+          className={`num w-16 h-20 sm:w-20 sm:h-24 text-5xl text-center font-black rounded-2xl text-white
+            border-2 transition-[border-color,background-color,box-shadow] duration-150 caret-accent
+            focus:outline-none focus:border-accent focus:shadow-[0_0_0_5px_color-mix(in_oklab,var(--th-accent)_30%,transparent)]
+            ${digit ? 'bg-accent/15 border-accent/70' : 'bg-white/10 border-white/25'}`}
         />
       ))}
     </div>

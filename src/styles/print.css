@@ -4,10 +4,25 @@
     margin: 15mm;
   }
 
+  html,
   body {
     background: white !important;
     color: black !important;
+  }
+
+  body {
     font-size: 14pt;
+  }
+
+  /* Drop the on-screen theme: plain black on white paper. */
+  .theme-root {
+    background: none !important;
+    color: black !important;
+    min-height: 0 !important;
+  }
+
+  .theme-bg {
+    display: none !important;
   }
 
   .no-print {
