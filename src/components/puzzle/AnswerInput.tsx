@@ -127,7 +127,7 @@ export function AnswerInput({ expected, onCorrect, label, autoFocus }: AnswerInp
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder={status === 'cooldown' ? '⏳' : '?'}
-          className={`num w-20 sm:w-24 h-16 text-3xl sm:text-4xl font-black text-center rounded-2xl border-[3px]
+          className={`num w-24 h-16 text-3xl sm:text-4xl font-black text-center rounded-2xl border-[3px]
             transition-[border-color,background-color,box-shadow] duration-150 caret-gray-900
             placeholder:text-gray-400 focus:outline-none
             focus:shadow-[0_0_0_5px_color-mix(in_oklab,var(--th-accent)_45%,transparent)]

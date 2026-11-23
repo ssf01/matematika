@@ -98,6 +98,9 @@ body {
 
 html {
   scroll-behavior: smooth;
+  /* keep focused controls clear of the sticky top bar and the setup action bar */
+  scroll-padding-top: calc(4rem + 1px + env(safe-area-inset-top));
+  scroll-padding-bottom: 6.5rem;
 }
 
 body {
@@ -201,7 +204,7 @@ body {
 @layer components {
 /* Full viewport height below the 4rem top bar. */
 .screen-h {
-  min-height: calc(100dvh - 4rem - env(safe-area-inset-top));
+  min-height: calc(100dvh - 4rem - 1px - env(safe-area-inset-top)); /* 1px = top bar border */
 }
 
 /* Frosted surface used by cards and panels. */

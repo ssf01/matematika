@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGameStore, MAX_SETUP_STEP } from '../../stores/gameStore';
 import { useTranslation } from '../../i18n/useTranslation';
 import { ThemePicker } from './ThemePicker';
@@ -83,6 +83,20 @@ export function SetupWizard() {
     store.setMultiplicationTableNumber(num);
     store.setCurrentStep('playing');
   };
+
+  const stepTitleRef = useRef<HTMLHeadingElement>(null);
+  const firstRender = useRef(true);
+  // After "Даље"/"Назад" the Next button is often disabled (nothing selected yet),
+  // which would drop keyboard focus to <body>. Move focus to the new step's title
+  // and bring it into view. The PIN step focuses its first box itself.
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    window.scrollTo({ top: 0 });
+    if (store.setupStep !== 3) stepTitleRef.current?.focus({ preventScroll: true });
+  }, [store.setupStep]);
 
   if (showMultiplicationPicker) {
     return (
@@ -187,7 +201,7 @@ export function SetupWizard() {
           <p className="text-sm font-bold uppercase tracking-wider text-accent mb-1">
             {fillTemplate(t('setup.stepOf'), { n: step + 1, total: STEP_TITLES.length })}
           </p>
-          <h2 id="setup-step-title" className="text-2xl sm:text-3xl font-black mb-4">
+          <h2 id="setup-step-title" ref={stepTitleRef} tabIndex={-1} className="text-2xl sm:text-3xl font-black mb-4 focus:outline-none">
             {t(STEP_TITLES[step])}
           </h2>
 
@@ -235,7 +249,7 @@ export function SetupWizard() {
 
       {/* Action bar: sticks to the bottom on small screens when content is long. */}
       <div
-        className="sticky bottom-0 z-30 mt-auto sm:mt-2 bg-page/92 border-t border-white/10 sm:bg-transparent sm:border-0 sm:px-4 sm:pb-4
+        className="sticky bottom-0 [@media(max-height:500px)]:static z-30 mt-auto sm:mt-2 bg-page/92 border-t border-white/10 sm:bg-transparent sm:border-0 sm:px-4 sm:pb-4
           shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.6)] sm:shadow-none pb-[env(safe-area-inset-bottom)]"
       >
         <div className="w-full max-w-xl sm:max-w-[34rem] mx-auto px-4 py-3 flex gap-3 sm:p-3 sm:bg-page/92 sm:rounded-3xl sm:border sm:border-white/15 sm:shadow-xl sm:shadow-black/30">
