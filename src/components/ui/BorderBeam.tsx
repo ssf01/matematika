@@ -1,4 +1,4 @@
-import React from 'react';
+import type { CSSProperties } from 'react';
 
 interface BorderBeamProps {
   colorFrom?: string;
@@ -22,7 +22,7 @@ export function BorderBeam({
           '--beam-to': colorTo,
           width: `${size}px`,
           animationDuration: duration,
-        } as React.CSSProperties}
+        } as CSSProperties}
       />
     </div>
   );

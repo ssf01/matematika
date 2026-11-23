@@ -1,6 +1,6 @@
-import React from 'react';
+import type { ButtonHTMLAttributes, CSSProperties } from 'react';
 
-interface ShimmerButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface ShimmerButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   shimmerColor?: string;
   background?: string;
 }
@@ -14,15 +14,16 @@ export function ShimmerButton({
 }: ShimmerButtonProps) {
   return (
     <button
+      type="button"
       className={`group relative z-0 flex cursor-pointer items-center justify-center
         overflow-hidden rounded-xl border border-white/15
         px-8 py-4 text-lg font-semibold text-white
         transition-all duration-300 ease-in-out
         hover:scale-[1.02] active:scale-95
         min-h-[44px] min-w-[44px]
-        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50
+        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80
         disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
-      style={{ background } as React.CSSProperties}
+      style={{ background } as CSSProperties}
       {...props}
     >
       {/* Shimmer effect layer */}
