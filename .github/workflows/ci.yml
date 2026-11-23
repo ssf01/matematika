@@ -25,6 +25,11 @@ jobs:
         with:
           node-version-file: .node-version
 
+      # Astro 7 needs Node >= 22.23.4 (the astro CLI runs on Node even via `bun run`).
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.4
