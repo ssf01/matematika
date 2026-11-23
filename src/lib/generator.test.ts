@@ -1,304 +1,471 @@
 import { describe, it, expect } from 'vitest';
-import { generateChain, generatePuzzle, generateMultiplicationTable, generateMetaGrid, generateMetaPuzzle, randInt, shuffle } from './generator';
-import { DIFFICULTY_CONSTRAINTS, META_CHAIN_LENGTH } from './constants';
-import type { Difficulty, Operation } from './types';
+import {
+  generateChain,
+  generatePuzzle,
+  generateMultiplicationTable,
+  generateMultiplicationPinChain,
+  generateMultiplicationPinPuzzle,
+  generateMetaGrid,
+  generateMetaPuzzle,
+  getChainStrategy,
+  randInt,
+  shuffle,
+} from './generator';
+import { getChainFinalDigit } from './validator';
+import { mulberry32 } from './rng';
+import {
+  CHAIN_LENGTH,
+  DIFFICULTY_CONSTRAINTS,
+  META_CHAIN_LENGTH_BY_DIFFICULTY,
+  MULTIPLICATION_PIN_CHAIN_LENGTH,
+} from './constants';
+import type { Difficulty, MathStep, Operation, PuzzleChain } from './types';
 
-describe('randInt', () => {
-  it('returns values within range', () => {
+// ---------------------------------------------------------------------------
+// Independent invariant checker (does not reuse generator internals)
+// ---------------------------------------------------------------------------
+
+const ALL_OPS: Operation[] = ['+', '-', '*', '/'];
+const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard'];
+const OP_SUBSETS: Operation[][] = Array.from({ length: 15 }, (_, i) =>
+  ALL_OPS.filter((_, bit) => (i + 1) & (1 << bit)),
+);
+
+/**
+ * Cases where the digit cannot be encoded within the difficulty's own facts
+ * without a trivial step, so the FINAL step escalates (key: ops|difficulty|digit).
+ */
+const ESCALATION_EXCEPTIONS = new Set([
+  '+|easy|1', // values ≤ 10: 1 is neither a non-trivial sum nor the ones digit of one → 5 + 6 = 11
+  '*|easy|3', // only 7 × 9 = 63 ends in 3 → hard table fact
+  '*|medium|3',
+]);
+/** Cases where the only in-bounds encoding is n − n = 0 or n ÷ n = 1 as the final step. */
+const TRIVIAL_FINAL_EXCEPTIONS = new Set([
+  '-|easy|0',
+  '/|easy|1',
+  '/|medium|1',
+  '/|hard|1',
+  '+/|easy|1',
+]);
+
+function key(ops: Operation[], difficulty: Difficulty, digit: number) {
+  return `${ops.join('')}|${difficulty}|${digit}`;
+}
+
+function arithmetic(s: MathStep): number {
+  switch (s.operator) {
+    case '+': return s.left + s.right;
+    case '-': return s.left - s.right;
+    case '*': return s.left * s.right;
+    case '/': return s.left / s.right;
+  }
+}
+
+function isTrivial(s: MathStep): boolean {
+  if (s.left === 0 || s.right === 0) return true;
+  if (s.operator === '*') return s.left === 1 || s.right === 1;
+  if (s.operator === '/') return s.right === 1 || s.left === s.right;
+  if (s.operator === '-') return s.left === s.right;
+  return false;
+}
+
+function inBounds(s: MathStep, difficulty: Difficulty): boolean {
+  const c = DIFFICULTY_CONSTRAINTS[difficulty];
+  const tablePair = (a: number, b: number) =>
+    a >= 2 && a <= 10 && b >= 2 && b <= 10 && (c.tables.includes(a) || c.tables.includes(b));
+  switch (s.operator) {
+    case '+':
+    case '-':
+      return Math.max(s.left, s.right, s.result) <= c.maxValue && s.right >= c.minRight;
+    case '*':
+      return tablePair(s.left, s.right);
+    case '/':
+      return tablePair(s.right, s.result);
+  }
+}
+
+interface Expectation {
+  difficulty: Difficulty;
+  ops: Operation[];
+  digit: number;
+  length: { min: number; max: number };
+  mode: 'full' | 'onesDigit' | 'independent';
+}
+
+function factKey(s: MathStep) {
+  return `${s.left}${s.operator}${s.right}`;
+}
+
+/** Throws (via expect) on any violated invariant. Returns flags for statistics. */
+function checkChain(chain: PuzzleChain, e: Expectation) {
+  const ctx = `${key(e.ops, e.difficulty, e.digit)} ${JSON.stringify(chain)}`;
+  const fail = (msg: string) => expect.fail(`${msg}: ${ctx}`);
+  const n = chain.steps.length;
+  if (chain.targetDigit !== e.digit) fail('targetDigit');
+  if (n < e.length.min || n > e.length.max) fail('length');
+  if ((chain.chainMode ?? 'full') !== e.mode) fail('chainMode');
+
+  const seen = new Set<string>();
+  let escalated = false;
+  let trivialFinal = false;
+  chain.steps.forEach((s, i) => {
+    const isLast = i === n - 1;
+    if (!e.ops.includes(s.operator)) fail(`op ${s.operator} not selected`);
+    for (const v of [s.left, s.right, s.result]) {
+      if (!Number.isInteger(v) || v < 0) fail('non-negative integers');
+    }
+    if (arithmetic(s) !== s.result) fail('arithmetic');
+    if (seen.has(factKey(s))) fail(`duplicate fact ${factKey(s)}`);
+    seen.add(factKey(s));
+
+    if (isTrivial(s)) {
+      const okTrivial =
+        isLast &&
+        ((s.operator === '-' && s.result === 0) || (s.operator === '/' && s.result === 1)) &&
+        s.left === s.right &&
+        TRIVIAL_FINAL_EXCEPTIONS.has(key(e.ops, e.difficulty, e.digit));
+      if (!okTrivial) fail(`trivial step ${factKey(s)}`);
+      trivialFinal = true;
+    } else if (e.mode === 'onesDigit') {
+      if (s.operator !== '*' || s.left < 2 || s.left > 9 || s.right < 2 || s.right > 9) fail('ones-digit fact');
+    } else if (!inBounds(s, e.difficulty)) {
+      const higher = DIFFICULTIES.slice(DIFFICULTIES.indexOf(e.difficulty) + 1);
+      if (!(isLast && ESCALATION_EXCEPTIONS.has(key(e.ops, e.difficulty, e.digit)) && higher.some((d) => inBounds(s, d)))) {
+        fail(`out of ${e.difficulty} bounds ${factKey(s)}`);
+      }
+      escalated = true;
+    }
+
+    if (i > 0) {
+      const prev = chain.steps[i - 1].result;
+      if (e.mode === 'full' && s.left !== prev) fail('continuity');
+      if (e.mode === 'onesDigit' && s.left !== prev % 10) fail('ones-digit continuity');
+      if (e.mode === 'independent' && s.left === prev) fail('independent chain looks chained');
+    }
+  });
+
+  const last = chain.steps[n - 1].result;
+  if (chain.useLastDigit) {
+    // A ones-digit chain may end on a one-digit product (2 × 2 = 4); otherwise the result is ≥ 10.
+    if ((e.mode !== 'onesDigit' && last < 10) || last % 10 !== e.digit) fail('ones-digit encoding');
+  } else if (last !== e.digit) {
+    fail('exact encoding');
+  }
+  if (getChainFinalDigit(chain) !== e.digit) fail('getChainFinalDigit');
+  return { escalated, trivialFinal };
+}
+
+const SEEDS = 200;
+
+// ---------------------------------------------------------------------------
+// Property tests
+// ---------------------------------------------------------------------------
+
+describe('generateChain property test (15 op subsets × 3 difficulties × 10 digits × 200 seeds)', () => {
+  for (const ops of OP_SUBSETS) {
+    it(`ops {${ops.join(' ')}}`, () => {
+      const mode = getChainStrategy(ops) === 'chained' ? 'full' : 'independent';
+      const escalations = new Set<string>();
+      const trivials = new Set<string>();
+      for (const difficulty of DIFFICULTIES) {
+        for (let digit = 0; digit <= 9; digit++) {
+          for (let seed = 0; seed < SEEDS; seed++) {
+            const rng = mulberry32(seed * 1000 + digit);
+            const chain = generateChain(digit, difficulty, ops, undefined, rng);
+            const flags = checkChain(chain, { difficulty, ops, digit, length: CHAIN_LENGTH, mode });
+            if (flags.escalated) escalations.add(key(ops, difficulty, digit));
+            if (flags.trivialFinal) trivials.add(key(ops, difficulty, digit));
+          }
+        }
+      }
+      // The exception lists are exact: every listed case is actually needed.
+      const expected = (set: Set<string>) => [...set].filter((k) => k.startsWith(`${ops.join('')}|`)).sort();
+      expect([...escalations].sort()).toEqual(expected(ESCALATION_EXCEPTIONS));
+      expect([...trivials].sort()).toEqual(expected(TRIVIAL_FINAL_EXCEPTIONS));
+    });
+  }
+
+  it('is deterministic for a given seed', () => {
+    const a = generateChain(5, 'hard', ALL_OPS, undefined, mulberry32(42));
+    const b = generateChain(5, 'hard', ALL_OPS, undefined, mulberry32(42));
+    expect(a).toEqual(b);
+  });
+
+  it('honours chainLengthOverride', () => {
+    for (const ops of OP_SUBSETS) {
+      for (let seed = 0; seed < 20; seed++) {
+        const chain = generateChain(seed % 10, 'medium', ops, { min: 3, max: 4 }, mulberry32(seed));
+        expect(chain.steps.length).toBeGreaterThanOrEqual(3);
+        expect(chain.steps.length).toBeLessThanOrEqual(4);
+      }
+    }
+  });
+});
+
+describe('generateMetaPuzzle property test', () => {
+  it('meets the chain invariants for every op subset and difficulty', () => {
+    for (const ops of OP_SUBSETS) {
+      const mode = getChainStrategy(ops) === 'chained' ? 'full' : 'independent';
+      for (const difficulty of DIFFICULTIES) {
+        for (let seed = 0; seed < 15; seed++) {
+          const rng = mulberry32(seed);
+          const pin = String(randInt(0, 9999, rng)).padStart(4, '0');
+          const puzzle = generateMetaPuzzle(pin, difficulty, ops, rng);
+          expect(puzzle.chains).toHaveLength(8);
+          const total = puzzle.chains.reduce((sum, c) => sum + c.steps.length, 0);
+          expect(total).toBeLessThanOrEqual(8 * META_CHAIN_LENGTH_BY_DIFFICULTY[difficulty].max);
+          puzzle.meta!.coordinates.forEach((coord, i) => {
+            expect(puzzle.meta!.cells[coord.row][coord.col]).toBe(Number(pin[i]));
+            for (const [chain, digit] of [[puzzle.chains[2 * i], coord.row], [puzzle.chains[2 * i + 1], coord.col]] as const) {
+              checkChain(chain, { difficulty, ops, digit, length: META_CHAIN_LENGTH_BY_DIFFICULTY[difficulty], mode });
+            }
+          });
+        }
+      }
+    }
+  });
+
+  it('caps hard meta workload at ≈72 steps on average, independent of op count', () => {
+    for (const ops of [['+'], ALL_OPS] as Operation[][]) {
+      let total = 0;
+      for (let seed = 0; seed < 50; seed++) {
+        total += generateMetaPuzzle('1234', 'hard', ops, mulberry32(seed)).chains.reduce((s, c) => s + c.steps.length, 0);
+      }
+      expect(total / 50).toBeLessThanOrEqual(76);
+    }
+  });
+});
+
+describe('multiplication-PIN mode property test', () => {
+  it('builds valid ones-digit chains without repeated facts', () => {
+    let chainsWithDuplicates = 0;
+    let chains = 0;
+    for (let digit = 0; digit <= 9; digit++) {
+      for (let seed = 0; seed < SEEDS; seed++) {
+        const chain = generateMultiplicationPinChain(digit, mulberry32(seed * 10 + digit));
+        expect(chain.useLastDigit).toBe(true);
+        const keys = chain.steps.map(factKey);
+        if (new Set(keys).size !== keys.length) chainsWithDuplicates++;
+        chains++;
+        // Odd targets are parity-locked to the 6 odd facts among 3, 7, 9 → shorter chains.
+        checkChain(chain, {
+          difficulty: 'hard',
+          ops: ['*'],
+          digit,
+          length: { min: digit % 2 === 1 ? 5 : MULTIPLICATION_PIN_CHAIN_LENGTH.min, max: MULTIPLICATION_PIN_CHAIN_LENGTH.max },
+          mode: 'onesDigit',
+        });
+        for (let i = 1; i < chain.steps.length; i++) expect([0, 1, 5]).not.toContain(chain.steps[i].left);
+      }
+    }
+    expect(chainsWithDuplicates / chains).toBeLessThan(0.05);
+  });
+
+  it('generateMultiplicationPinPuzzle makes 4 ones-digit chains', () => {
+    const puzzle = generateMultiplicationPinPuzzle('0719', mulberry32(3));
+    expect(puzzle.chains.map((c) => c.targetDigit)).toEqual([0, 7, 1, 9]);
+    for (const c of puzzle.chains) expect(c.chainMode).toBe('onesDigit');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression tests for the verified bugs (G1–G12)
+// ---------------------------------------------------------------------------
+
+describe('regressions', () => {
+  const steps = (c: PuzzleChain) => c.steps;
+
+  it('G1: monotone op sets use only selected ops, distinct facts, full length (no fallback)', () => {
+    for (let seed = 0; seed < 100; seed++) {
+      const chain = generateChain(1, 'easy', ['+'], undefined, mulberry32(seed));
+      expect(chain.chainMode).toBe('independent');
+      expect(steps(chain).every((s) => s.operator === '+')).toBe(true);
+      expect(steps(chain).length).toBeGreaterThanOrEqual(CHAIN_LENGTH.min);
+      expect(steps(chain).some((s) => s.right === 0 || s.left === 0)).toBe(false);
+      const loose = steps(chain).map((s) => `${Math.min(s.left, s.right)}+${Math.max(s.left, s.right)}`);
+      expect(new Set(loose).size).toBe(loose.length);
+    }
+    for (const ops of [['-'], ['+', '*'], ['-', '/']] as Operation[][]) {
+      const chain = generateChain(0, 'hard', ops, undefined, mulberry32(1));
+      expect(steps(chain).every((s) => ops.includes(s.operator))).toBe(true);
+      expect(Math.max(...steps(chain).map((s) => s.result))).toBeGreaterThan(17);
+    }
+  });
+
+  it('G1: {+,÷} and {+,×,÷} reach target 0 without unselected ops', () => {
+    for (const ops of [['+', '/'], ['+', '*', '/']] as Operation[][]) {
+      for (let seed = 0; seed < 50; seed++) {
+        const chain = generateChain(0, 'medium', ops, undefined, mulberry32(seed));
+        expect(chain.chainMode).toBe('full');
+        expect(steps(chain).every((s) => ops.includes(s.operator))).toBe(true);
+        expect(getChainFinalDigit(chain)).toBe(0);
+      }
+    }
+  });
+
+  it('G2: hard single-op chains never use the other operation', () => {
+    for (let seed = 0; seed < 100; seed++) {
+      expect(steps(generateChain(4, 'hard', ['+'], undefined, mulberry32(seed))).every((s) => s.operator === '+')).toBe(true);
+      expect(steps(generateChain(4, 'hard', ['-'], undefined, mulberry32(seed))).every((s) => s.operator === '-')).toBe(true);
+    }
+  });
+
+  it('G3: ×/÷ respect difficulty tables (no 200, no 112:7, no factors 12/15)', () => {
+    for (let seed = 0; seed < 200; seed++) {
+      for (const s of steps(generateChain(seed % 10, 'easy', ['/'], undefined, mulberry32(seed)))) {
+        if (s.left === s.right) continue; // n ÷ n = 1: the documented final-step exception for digit 1
+        expect(s.left).toBeLessThanOrEqual(100);
+        expect([2, 3, 5, 10].includes(s.right) || [2, 3, 5, 10].includes(s.result)).toBe(true);
+      }
+      for (const s of steps(generateChain(seed % 10, 'hard', ['*', '/'], undefined, mulberry32(seed)))) {
+        expect(Math.max(s.left, s.right, s.result)).toBeLessThanOrEqual(100);
+        expect([12, 15]).not.toContain(s.right);
+      }
+    }
+  });
+
+  it('G4: pure ÷ uses only division, also for target 0', () => {
+    for (let digit = 0; digit <= 9; digit++) {
+      const chain = generateChain(digit, 'medium', ['/'], undefined, mulberry32(digit));
+      expect(steps(chain).every((s) => s.operator === '/')).toBe(true);
+    }
+  });
+
+  it('G5: no trivial steps (0×4, 0:10, 1×2, 4:4, 2−2)', () => {
+    for (const ops of OP_SUBSETS) {
+      for (let seed = 0; seed < 30; seed++) {
+        const chain = generateChain(5, 'medium', ops, undefined, mulberry32(seed));
+        expect(steps(chain).some(isTrivial)).toBe(false);
+      }
+    }
+  });
+
+  it('G6: hard +/− steps always have a two-digit right operand', () => {
+    for (const ops of [['+', '-'], ALL_OPS, ['-', '/']] as Operation[][]) {
+      for (let seed = 0; seed < 100; seed++) {
+        for (const s of steps(generateChain(seed % 10, 'hard', ops, undefined, mulberry32(seed)))) {
+          if (s.operator === '+' || s.operator === '-') expect(s.right).toBeGreaterThanOrEqual(10);
+        }
+      }
+    }
+  });
+
+  it('G7: ones-digit × chains never repeat a fact and leave {3,7,9} for even targets', () => {
+    let evenLeftSeen = false;
+    for (let seed = 0; seed < 100; seed++) {
+      const chain = generateMultiplicationPinChain(seed % 10, mulberry32(seed));
+      const keys = steps(chain).map(factKey);
+      expect(new Set(keys).size).toBe(keys.length);
+      if (chain.targetDigit % 2 === 0 && steps(chain).some((s) => s.left % 2 === 0)) evenLeftSeen = true;
+    }
+    expect(evenLeftSeen).toBe(true);
+  });
+
+  it('G8: invalid input throws', () => {
+    expect(() => generatePuzzle('12a4', 'easy', ['+'])).toThrow();
+    expect(() => generatePuzzle('123', 'easy', ['+'])).toThrow();
+    expect(() => generatePuzzle('12345', 'easy', ['+'])).toThrow();
+    expect(() => generatePuzzle('1234', 'easy', [])).toThrow();
+    expect(() => generateChain(3, 'easy', [])).toThrow();
+    expect(() => generateChain(10, 'easy', ['+'])).toThrow();
+    expect(() => generateChain(Number.NaN, 'easy', ['+'])).toThrow();
+    expect(() => generateMetaPuzzle('abcd', 'easy', ['+'])).toThrow();
+    expect(() => generateMultiplicationPinPuzzle('99')).toThrow();
+  });
+
+  it('G10: getChainFinalDigit honours useLastDigit', () => {
+    const chain = generateChain(0, 'easy', ['+', '-'], undefined, mulberry32(7));
+    expect(chain.useLastDigit).toBe(true);
+    expect(getChainFinalDigit(chain)).toBe(0);
+  });
+
+  it('G11: standard puzzle workload is ≤ 36 steps regardless of op count', () => {
+    for (let seed = 0; seed < 50; seed++) {
+      const total = generatePuzzle('8642', 'hard', ALL_OPS, mulberry32(seed)).chains.reduce((s, c) => s + c.steps.length, 0);
+      expect(total).toBeLessThanOrEqual(4 * CHAIN_LENGTH.max);
+    }
+  });
+
+  it('G12: seeded generation is reproducible', () => {
+    expect(generatePuzzle('2580', 'medium', ['+', '*'], mulberry32(9))).toEqual(
+      generatePuzzle('2580', 'medium', ['+', '*'], mulberry32(9)),
+    );
+    expect(generateMetaPuzzle('2580', 'easy', ['-', '/'], mulberry32(9))).toEqual(
+      generateMetaPuzzle('2580', 'easy', ['-', '/'], mulberry32(9)),
+    );
+  });
+});
+
+describe('getChainStrategy', () => {
+  it('chains sets that can go both up and down', () => {
+    expect(getChainStrategy(['+', '-'])).toBe('chained');
+    expect(getChainStrategy(['*', '/'])).toBe('chained');
+    expect(getChainStrategy(['+', '/'])).toBe('chained');
+    expect(getChainStrategy(['-', '*'])).toBe('chained');
+    expect(getChainStrategy(['+'])).toBe('independent');
+    expect(getChainStrategy(['+', '*'])).toBe('independent');
+    expect(getChainStrategy(['-', '/'])).toBe('independent');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Basic API behaviour
+// ---------------------------------------------------------------------------
+
+describe('randInt / shuffle', () => {
+  it('randInt returns values within range', () => {
+    const rng = mulberry32(1);
     for (let i = 0; i < 100; i++) {
-      const val = randInt(3, 7);
+      const val = randInt(3, 7, rng);
       expect(val).toBeGreaterThanOrEqual(3);
       expect(val).toBeLessThanOrEqual(7);
     }
-  });
-
-  it('returns exact value when min === max', () => {
     expect(randInt(5, 5)).toBe(5);
   });
-});
 
-describe('shuffle', () => {
-  it('preserves all elements', () => {
-    const arr = [1, 2, 3, 4, 5];
-    const shuffled = shuffle([...arr]);
-    expect(shuffled.sort()).toEqual(arr.sort());
-  });
-
-  it('returns same length', () => {
-    const arr = [1, 2, 3];
-    expect(shuffle([...arr])).toHaveLength(3);
-  });
-});
-
-describe('generateChain', () => {
-  const allOps: Operation[] = ['+', '-', '*', '/'];
-
-  it('generates a chain for each digit 0-9 (easy)', () => {
-    for (let digit = 0; digit <= 9; digit++) {
-      const chain = generateChain(digit, 'easy', ['+', '-']);
-      expect(chain.targetDigit).toBe(digit);
-      expect(chain.steps.length).toBeGreaterThanOrEqual(6);
-      expect(chain.steps.length).toBeLessThanOrEqual(9);
-      // Last step result must equal target digit
-      expect(chain.steps[chain.steps.length - 1].result).toBe(digit);
-    }
-  });
-
-  it('generates a chain for each digit 0-9 (medium)', () => {
-    for (let digit = 0; digit <= 9; digit++) {
-      const chain = generateChain(digit, 'medium', ['+', '-']);
-      expect(chain.targetDigit).toBe(digit);
-      expect(chain.steps[chain.steps.length - 1].result).toBe(digit);
-    }
-  });
-
-  it('generates a chain for each digit 0-9 (hard)', () => {
-    for (let digit = 0; digit <= 9; digit++) {
-      const chain = generateChain(digit, 'hard', ['+', '-']);
-      expect(chain.targetDigit).toBe(digit);
-      expect(chain.steps[chain.steps.length - 1].result).toBe(digit);
-    }
-  });
-
-  it('respects easy mode constraints (values ≤ 10)', () => {
-    for (let i = 0; i < 20; i++) {
-      const chain = generateChain(randInt(0, 9), 'easy', ['+', '-']);
-      for (const step of chain.steps) {
-        expect(step.left).toBeGreaterThanOrEqual(0);
-        expect(step.left).toBeLessThanOrEqual(10);
-        expect(step.right).toBeGreaterThanOrEqual(0);
-        expect(step.right).toBeLessThanOrEqual(10);
-        expect(step.result).toBeGreaterThanOrEqual(0);
-        expect(step.result).toBeLessThanOrEqual(10);
-      }
-    }
-  });
-
-  it('respects medium mode constraints (values ≤ 18)', () => {
-    for (let i = 0; i < 20; i++) {
-      const chain = generateChain(randInt(0, 9), 'medium', ['+', '-']);
-      for (const step of chain.steps) {
-        expect(step.left).toBeGreaterThanOrEqual(0);
-        expect(step.left).toBeLessThanOrEqual(18);
-        expect(step.result).toBeGreaterThanOrEqual(0);
-        expect(step.result).toBeLessThanOrEqual(18);
-      }
-    }
-  });
-
-  it('chains are mathematically valid (each step computes correctly)', () => {
-    const difficulties: Difficulty[] = ['easy', 'medium', 'hard'];
-    for (const diff of difficulties) {
-      for (let digit = 0; digit <= 9; digit++) {
-        const chain = generateChain(digit, diff, ['+', '-']);
-        for (const step of chain.steps) {
-          let expected: number;
-          switch (step.operator) {
-            case '+': expected = step.left + step.right; break;
-            case '-': expected = step.left - step.right; break;
-            case '*': expected = step.left * step.right; break;
-            case '/': expected = step.left / step.right; break;
-            default: expected = NaN;
-          }
-          expect(step.result).toBe(expected);
-        }
-      }
-    }
-  });
-
-  it('works with multiplication and division', () => {
-    for (let digit = 1; digit <= 9; digit++) {
-      const chain = generateChain(digit, 'medium', ['*', '/']);
-      expect(chain.targetDigit).toBe(digit);
-      // With independent chain generation, last step's ones digit equals target
-      const lastResult = chain.steps[chain.steps.length - 1].result;
-      if (chain.useLastDigit) {
-        expect(lastResult % 10).toBe(digit);
-      } else {
-        expect(lastResult).toBe(digit);
-      }
-      // All division results should be integers
-      for (const step of chain.steps) {
-        if (step.operator === '/') {
-          expect(Number.isInteger(step.result)).toBe(true);
-        }
-      }
-    }
-  });
-
-  it('handles digit 0 correctly', () => {
-    for (let i = 0; i < 10; i++) {
-      const chain = generateChain(0, 'easy', ['+', '-']);
-      expect(chain.targetDigit).toBe(0);
-      expect(chain.steps[chain.steps.length - 1].result).toBe(0);
-    }
+  it('shuffle preserves all elements', () => {
+    expect(shuffle([1, 2, 3, 4, 5], mulberry32(2)).sort()).toEqual([1, 2, 3, 4, 5]);
   });
 });
 
 describe('generatePuzzle', () => {
-  it('generates correct number of chains for 4-digit PIN', () => {
+  it('generates one chain per PIN digit', () => {
     const puzzle = generatePuzzle('1234', 'easy', ['+', '-']);
     expect(puzzle.pin).toBe('1234');
-    expect(puzzle.chains).toHaveLength(4);
-    expect(puzzle.chains[0].targetDigit).toBe(1);
-    expect(puzzle.chains[1].targetDigit).toBe(2);
-    expect(puzzle.chains[2].targetDigit).toBe(3);
-    expect(puzzle.chains[3].targetDigit).toBe(4);
+    expect(puzzle.chains.map((c) => c.targetDigit)).toEqual([1, 2, 3, 4]);
+    for (const c of puzzle.chains) expect(getChainFinalDigit(c)).toBe(c.targetDigit);
   });
 
   it('handles PIN with zeros', () => {
     const puzzle = generatePuzzle('0000', 'easy', ['+', '-']);
-    expect(puzzle.chains).toHaveLength(4);
-    for (const chain of puzzle.chains) {
-      expect(chain.targetDigit).toBe(0);
-      expect(chain.steps[chain.steps.length - 1].result).toBe(0);
-    }
-  });
-
-  it('handles PIN with all 9s', () => {
-    const puzzle = generatePuzzle('9999', 'medium', ['+', '-']);
-    for (const chain of puzzle.chains) {
-      expect(chain.targetDigit).toBe(9);
-      expect(chain.steps[chain.steps.length - 1].result).toBe(9);
-    }
+    for (const chain of puzzle.chains) expect(getChainFinalDigit(chain)).toBe(0);
   });
 });
 
 describe('generateMultiplicationTable', () => {
-  it('generates 10 problems by default', () => {
-    const steps = generateMultiplicationTable(7);
-    expect(steps).toHaveLength(10);
-  });
-
-  it('contains all multipliers 1-10', () => {
-    const steps = generateMultiplicationTable(5);
-    const rights = steps.map((s) => s.right).sort((a, b) => a - b);
-    expect(rights).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  });
-
-  it('all results are correct', () => {
-    const num = 8;
-    const steps = generateMultiplicationTable(num);
-    for (const step of steps) {
-      expect(step.left).toBe(num);
-      expect(step.operator).toBe('*');
-      expect(step.result).toBe(num * step.right);
-    }
+  it('contains all multipliers 1-10 with correct results', () => {
+    const steps = generateMultiplicationTable(8);
+    expect(steps.map((s) => s.right).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    for (const step of steps) expect(step.result).toBe(8 * step.right);
   });
 
   it('respects custom maxMultiplier', () => {
-    const steps = generateMultiplicationTable(3, 5);
-    expect(steps).toHaveLength(5);
+    expect(generateMultiplicationTable(3, 5)).toHaveLength(5);
   });
 });
 
 describe('generateMetaGrid', () => {
-  it('returns a 10x10 grid', () => {
-    const grid = generateMetaGrid('1234');
+  it('returns a 10x10 digit grid with unique PIN coordinates', () => {
+    const grid = generateMetaGrid('1234', mulberry32(5));
     expect(grid.cells).toHaveLength(10);
     for (const row of grid.cells) {
       expect(row).toHaveLength(10);
+      for (const cell of row) expect(cell >= 0 && cell <= 9).toBe(true);
     }
-  });
-
-  it('all cells contain digits 0-9', () => {
-    const grid = generateMetaGrid('5678');
-    for (const row of grid.cells) {
-      for (const cell of row) {
-        expect(cell).toBeGreaterThanOrEqual(0);
-        expect(cell).toBeLessThanOrEqual(9);
-      }
-    }
-  });
-
-  it('PIN digits are placed at the correct coordinates', () => {
-    const grid = generateMetaGrid('1234');
-    for (const coord of grid.coordinates) {
-      expect(grid.cells[coord.row][coord.col]).toBe(coord.pinDigit);
-    }
-  });
-
-  it('all coordinates are unique (no two share the same row,col)', () => {
-    const grid = generateMetaGrid('1234');
-    const seen = new Set<string>();
-    for (const coord of grid.coordinates) {
-      const key = `${coord.row},${coord.col}`;
-      expect(seen.has(key)).toBe(false);
-      seen.add(key);
-    }
-  });
-
-  it('number of coordinates equals PIN length', () => {
-    const pin = '1234';
-    const grid = generateMetaGrid(pin);
-    expect(grid.coordinates).toHaveLength(pin.length);
-  });
-});
-
-describe('generateMetaPuzzle', () => {
-  it('returns 8 chains for a 4-digit PIN (2 per digit)', () => {
-    const puzzle = generateMetaPuzzle('1234', 'easy', ['+', '-']);
-    expect(puzzle.chains).toHaveLength(8);
-  });
-
-  it('has a meta field with grid and coordinates', () => {
-    const puzzle = generateMetaPuzzle('1234', 'easy', ['+', '-']);
-    expect(puzzle.meta).toBeDefined();
-    expect(puzzle.meta!.cells).toHaveLength(10);
-    expect(puzzle.meta!.coordinates).toHaveLength(4);
-  });
-
-  it('chain pairs target correct row/col from meta coordinates', () => {
-    const puzzle = generateMetaPuzzle('1234', 'easy', ['+', '-']);
-    const meta = puzzle.meta!;
-    for (let i = 0; i < meta.coordinates.length; i++) {
-      const rowChain = puzzle.chains[i * 2];
-      const colChain = puzzle.chains[i * 2 + 1];
-      expect(rowChain.targetDigit).toBe(meta.coordinates[i].row);
-      expect(colChain.targetDigit).toBe(meta.coordinates[i].col);
-    }
-  });
-
-  it('all chains have reasonable step counts', () => {
-    // Easy +/- uses shorter chains (5-7) to avoid repetition with small numbers
-    const easyPuzzle = generateMetaPuzzle('1234', 'easy', ['+', '-']);
-    for (const chain of easyPuzzle.chains) {
-      expect(chain.steps.length).toBeGreaterThanOrEqual(5);
-      expect(chain.steps.length).toBeLessThanOrEqual(7);
-    }
-    // Hard uses full META_CHAIN_LENGTH
-    const hardPuzzle = generateMetaPuzzle('1234', 'hard', ['+', '-']);
-    for (const chain of hardPuzzle.chains) {
-      expect(chain.steps.length).toBeGreaterThanOrEqual(META_CHAIN_LENGTH.min);
-      expect(chain.steps.length).toBeLessThanOrEqual(META_CHAIN_LENGTH.max);
-    }
-  });
-
-  it('all steps are mathematically valid', () => {
-    const puzzle = generateMetaPuzzle('1234', 'medium', ['+', '-']);
-    for (const chain of puzzle.chains) {
-      for (const step of chain.steps) {
-        let expected: number;
-        switch (step.operator) {
-          case '+': expected = step.left + step.right; break;
-          case '-': expected = step.left - step.right; break;
-          case '*': expected = step.left * step.right; break;
-          case '/': expected = step.left / step.right; break;
-          default: expected = NaN;
-        }
-        expect(step.result).toBe(expected);
-      }
-    }
-  });
-
-  it('last step result equals targetDigit for + and - chains', () => {
-    // Run multiple times to catch probabilistic issues
-    for (let run = 0; run < 20; run++) {
-      const puzzle = generateMetaPuzzle('5079', 'easy', ['+', '-']);
-      for (const chain of puzzle.chains) {
-        const lastStep = chain.steps[chain.steps.length - 1];
-        expect(lastStep.result).toBe(chain.targetDigit);
-      }
-    }
+    expect(grid.coordinates).toHaveLength(4);
+    const seen = new Set(grid.coordinates.map((c) => `${c.row},${c.col}`));
+    expect(seen.size).toBe(4);
+    for (const coord of grid.coordinates) expect(grid.cells[coord.row][coord.col]).toBe(coord.pinDigit);
   });
 });

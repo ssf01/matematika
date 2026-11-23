@@ -8,6 +8,8 @@ export type Operation = '+' | '-' | '*' | '/';
 
 export type GameMode = 'digital' | 'print' | 'meta' | 'meta-print';
 
+export type ChainMode = 'full' | 'onesDigit' | 'independent';
+
 export interface MathStep {
   left: number;
   operator: Operation;
@@ -18,8 +20,15 @@ export interface MathStep {
 export interface PuzzleChain {
   targetDigit: number;
   steps: MathStep[];
-  useLastDigit?: boolean; // true when the ones digit of the last result = target (multiplication mode)
-  chainMode?: 'full' | 'onesDigit'; // 'full' = result carries over (default), 'onesDigit' = ones digit carries over (multiplication)
+  /** true when the target is the ONES DIGIT of the last result (e.g. 4 + 6 = 10 → 0). */
+  useLastDigit?: boolean;
+  /**
+   * How consecutive steps relate:
+   * - 'full' (default): each step's left operand is the previous result.
+   * - 'onesDigit': each step's left operand is the previous result's ones digit.
+   * - 'independent': steps are unrelated facts; only the last one encodes the digit.
+   */
+  chainMode?: ChainMode;
 }
 
 export interface MetaCoordinate {

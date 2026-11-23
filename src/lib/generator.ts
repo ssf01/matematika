@@ -1,614 +1,600 @@
 import type { Operation, Difficulty, MathStep, PuzzleChain, Puzzle, MetaGrid, MetaCoordinate } from './types';
-import { DIFFICULTY_CONSTRAINTS, CHAIN_LENGTH, META_CHAIN_LENGTH, META_GRID_SIZE } from './constants';
+import {
+  DIFFICULTY_CONSTRAINTS,
+  CHAIN_LENGTH,
+  META_CHAIN_LENGTH_BY_DIFFICULTY,
+  META_GRID_SIZE,
+  MIN_FACTOR,
+  MAX_FACTOR,
+  MULTIPLICATION_PIN_CHAIN_LENGTH,
+} from './constants';
+import type { Rng } from './rng';
 
-export function randInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+/*
+ * Math engine
+ * ===========
+ *
+ * Every chain is built from a finite set of allowed "facts" (MathStep) for the
+ * chosen difficulty and operations. Trivial facts are never in that set:
+ * operand 0, ×1, 1×, ÷1, n÷n, 0÷n, n−n (results are always ≥ 1).
+ *
+ * Strategy by operation set (see getChainStrategy):
+ * - 'chained' — the set has an increasing op (+ or ×) AND a decreasing op
+ *   (− or ÷). Each step's left operand is the previous result. The walk is
+ *   constructed forwards over a precomputed "can still reach the final step in
+ *   exactly k steps" table, with backtracking, so it cannot dead-end.
+ *   {×, ÷} is chained too; every step is a real times-table fact.
+ * - 'independent' — monotone sets ({+}, {−}, {×}, {÷}, {+,×}, {−,÷}) cannot walk
+ *   back down (or up) to a digit, so the chain is a list of distinct,
+ *   unrelated facts using only the selected ops; only the LAST fact encodes the
+ *   digit.
+ *
+ * The last fact encodes the target digit, in order of preference:
+ *   1. exactly (result === digit),
+ *   2. by its ones digit (result ≥ 10, e.g. 4 + 6 = 10 → 0), useLastDigit: true,
+ *   3. a trivial final step: n − n = 0 (digit 0) or n ÷ n = 1 (digit 1),
+ *   4. the same three options with the next difficulty's facts (final step only).
+ * Option 3/4 are only reached when 1/2 are impossible; see
+ * ENCODING_EXCEPTIONS in generator.test.ts for the complete list.
+ */
+
+const OPERATIONS: Operation[] = ['+', '-', '*', '/'];
+const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard'];
+const INVERSE: Record<Operation, Operation> = { '+': '-', '-': '+', '*': '/', '/': '*' };
+/** Values are 0..100 (10 × 10 is the largest product). */
+const NODE_COUNT = MAX_FACTOR * MAX_FACTOR + 1;
+/** Max DFS expansions per chain before giving up (never hit in practice). */
+const SEARCH_BUDGET = 50_000;
+
+export type ChainStrategy = 'chained' | 'independent';
+
+interface Fact extends MathStep {
+  /** Node the next step continues from (result, or its ones digit). */
+  to: number;
+  key: string;
 }
 
-export function shuffle<T>(arr: T[]): T[] {
+interface Graph {
+  byOp: Map<Operation, Fact[]>;
+  /** Outgoing facts per node (index = left operand). */
+  out: Fact[][];
+}
+
+interface FinalPlan {
+  facts: Fact[];
+  byLeft: Map<number, Fact[]>;
+  useLastDigit: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Randomness helpers
+// ---------------------------------------------------------------------------
+
+export function randInt(min: number, max: number, rng: Rng = Math.random): number {
+  return Math.floor(rng() * (max - min + 1)) + min;
+}
+
+export function shuffle<T>(arr: T[], rng: Rng = Math.random): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
-    const j = randInt(0, i);
+    const j = randInt(0, i, rng);
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
 }
 
-interface InverseResult {
-  previousResult: number;
-  operandRight: number;
+function pick<T>(arr: T[], rng: Rng): T {
+  return arr[randInt(0, arr.length - 1, rng)];
 }
 
-function tryInvert(
-  op: Operation,
-  currentResult: number,
-  constraints: { maxValue: number; allowCarry: boolean; twoDigit: boolean },
-): InverseResult | null {
-  const maxVal = constraints.maxValue;
-  const MAX_ATTEMPTS = 50;
+// ---------------------------------------------------------------------------
+// Input guards
+// ---------------------------------------------------------------------------
 
+function assertPin(pin: string): void {
+  if (typeof pin !== 'string' || !/^\d{4}$/.test(pin)) {
+    throw new Error(`PIN must be exactly 4 digits, got "${pin}"`);
+  }
+}
+
+function normalizeOps(operations: Operation[]): Operation[] {
+  if (!Array.isArray(operations) || operations.length === 0) {
+    throw new Error('At least one operation must be selected');
+  }
+  for (const op of operations) {
+    if (!OPERATIONS.includes(op)) throw new Error(`Unknown operation "${op}"`);
+  }
+  return OPERATIONS.filter((op) => operations.includes(op));
+}
+
+function assertDigit(digit: number): void {
+  if (!Number.isInteger(digit) || digit < 0 || digit > 9) {
+    throw new Error(`Target digit must be an integer 0-9, got ${digit}`);
+  }
+}
+
+function assertDifficulty(difficulty: Difficulty): void {
+  if (!DIFFICULTIES.includes(difficulty)) throw new Error(`Unknown difficulty "${difficulty}"`);
+}
+
+function assertLength(len: { min: number; max: number }): void {
+  if (!Number.isInteger(len.min) || !Number.isInteger(len.max) || len.min < 1 || len.max < len.min) {
+    throw new Error(`Invalid chain length range ${len.min}..${len.max}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fact sets
+// ---------------------------------------------------------------------------
+
+function makeFact(left: number, operator: Operation, right: number, result: number, to = result): Fact {
+  return { left, operator, right, result, to, key: `${left}${operator}${right}` };
+}
+
+function isTablePair(a: number, b: number, tables: number[]): boolean {
+  return (
+    a >= MIN_FACTOR && a <= MAX_FACTOR && b >= MIN_FACTOR && b <= MAX_FACTOR &&
+    (tables.includes(a) || tables.includes(b))
+  );
+}
+
+const factCache = new Map<string, Fact[]>();
+
+/** All non-trivial facts for one operation at one difficulty. */
+function factsFor(op: Operation, difficulty: Difficulty): Fact[] {
+  const cacheKey = `${difficulty}${op}`;
+  const cached = factCache.get(cacheKey);
+  if (cached) return cached;
+
+  const { maxValue, minRight, tables } = DIFFICULTY_CONSTRAINTS[difficulty];
+  const facts: Fact[] = [];
   switch (op) {
-    case '+': {
-      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        const operandRight = randInt(1, Math.min(maxVal, currentResult));
-        if (operandRight < 1) continue;
-        const previousResult = currentResult - operandRight;
-        if (previousResult < 0 || previousResult > maxVal) continue;
-        if (!constraints.allowCarry && previousResult + operandRight > 10) continue;
-        return { previousResult, operandRight };
+    case '+':
+      for (let a = 1; a < maxValue; a++) {
+        for (let b = Math.max(1, minRight); a + b <= maxValue; b++) facts.push(makeFact(a, '+', b, a + b));
       }
-      return null;
-    }
-
-    case '-': {
-      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        const operandRight = randInt(1, maxVal);
-        const previousResult = currentResult + operandRight;
-        if (previousResult > maxVal) continue;
-        if (!constraints.allowCarry && previousResult > 10) continue;
-        return { previousResult, operandRight };
+      break;
+    case '-':
+      for (let a = 2; a <= maxValue; a++) {
+        for (let b = Math.max(1, minRight); b < a; b++) facts.push(makeFact(a, '-', b, a - b));
       }
-      return null;
-    }
-
-    case '*': {
-      if (currentResult === 0) {
-        const operandRight = randInt(2, Math.min(maxVal, 10));
-        return { previousResult: 0, operandRight };
-      }
-      const divisors: number[] = [];
-      for (let d = 2; d <= Math.min(currentResult, maxVal, 10); d++) {
-        if (currentResult % d === 0) {
-          const prev = currentResult / d;
-          if (prev >= 1 && prev <= maxVal) divisors.push(d);
+      break;
+    case '*':
+      for (let a = MIN_FACTOR; a <= MAX_FACTOR; a++) {
+        for (let b = MIN_FACTOR; b <= MAX_FACTOR; b++) {
+          if (isTablePair(a, b, tables)) facts.push(makeFact(a, '*', b, a * b));
         }
       }
-      if (divisors.length === 0) return null;
-      const operandRight = divisors[randInt(0, divisors.length - 1)];
-      return { previousResult: currentResult / operandRight, operandRight };
-    }
-
-    case '/': {
-      if (currentResult === 0) {
-        const operandRight = randInt(2, Math.min(maxVal, 10));
-        return { previousResult: 0, operandRight };
+      break;
+    case '/':
+      for (let divisor = MIN_FACTOR; divisor <= MAX_FACTOR; divisor++) {
+        for (let quotient = MIN_FACTOR; quotient <= MAX_FACTOR; quotient++) {
+          if (isTablePair(divisor, quotient, tables)) {
+            facts.push(makeFact(divisor * quotient, '/', divisor, quotient));
+          }
+        }
       }
-      const validDivisors: number[] = [];
-      for (let d = 2; d <= 10; d++) {
-        if (currentResult * d <= maxVal) validDivisors.push(d);
-      }
-      if (validDivisors.length === 0) return null;
-      const operandRight = validDivisors[randInt(0, validDivisors.length - 1)];
-      return { previousResult: currentResult * operandRight, operandRight };
-    }
-
-    default:
-      return null;
+      break;
   }
+  factCache.set(cacheKey, facts);
+  return facts;
+}
+
+/** Trivial facts that are allowed ONLY as the final step, and only when unavoidable. */
+function trivialFinalFacts(digit: number, ops: Operation[], difficulty: Difficulty): Fact[] {
+  const { maxValue, minRight } = DIFFICULTY_CONSTRAINTS[difficulty];
+  const facts: Fact[] = [];
+  if (digit === 0 && ops.includes('-')) {
+    for (let n = Math.max(2, minRight); n <= maxValue; n++) facts.push(makeFact(n, '-', n, 0));
+  }
+  if (digit === 1 && ops.includes('/')) {
+    for (let n = MIN_FACTOR; n <= MAX_FACTOR; n++) facts.push(makeFact(n, '/', n, 1));
+  }
+  return facts;
+}
+
+const graphCache = new Map<string, Graph>();
+
+function buildGraph(facts: Map<Operation, Fact[]>): Graph {
+  const out: Fact[][] = Array.from({ length: NODE_COUNT }, () => []);
+  for (const list of facts.values()) for (const f of list) out[f.left].push(f);
+  return { byOp: facts, out };
+}
+
+function getGraph(difficulty: Difficulty, ops: Operation[]): Graph {
+  const key = `${difficulty}|${ops.join('')}`;
+  let g = graphCache.get(key);
+  if (!g) {
+    g = buildGraph(new Map(ops.map((op) => [op, factsFor(op, difficulty)])));
+    graphCache.set(key, g);
+  }
+  return g;
+}
+
+function makePlan(facts: Fact[], useLastDigit: boolean): FinalPlan {
+  const byLeft = new Map<number, Fact[]>();
+  for (const f of facts) {
+    const list = byLeft.get(f.left);
+    if (list) list.push(f);
+    else byLeft.set(f.left, [f]);
+  }
+  return { facts, byLeft, useLastDigit };
+}
+
+const planCache = new Map<string, FinalPlan[]>();
+
+/** Candidate final-step fact sets for a digit, most preferred first. */
+function finalPlans(digit: number, difficulty: Difficulty, ops: Operation[]): FinalPlan[] {
+  const key = `${difficulty}|${ops.join('')}|${digit}`;
+  const cached = planCache.get(key);
+  if (cached) return cached;
+
+  const plans: FinalPlan[] = [];
+  for (const level of DIFFICULTIES.slice(DIFFICULTIES.indexOf(difficulty))) {
+    const all = ops.flatMap((op) => factsFor(op, level));
+    const exact = all.filter((f) => f.result === digit);
+    if (exact.length > 0) plans.push(makePlan(exact, false));
+    const ones = all.filter((f) => f.result >= 10 && f.result % 10 === digit);
+    if (ones.length > 0) plans.push(makePlan(ones, true));
+    const trivial = trivialFinalFacts(digit, ops, level);
+    if (trivial.length > 0) plans.push(makePlan(trivial, false));
+  }
+  if (plans.length === 0) {
+    throw new Error(`Cannot encode digit ${digit} with operations ${ops.join(' ')}`);
+  }
+  planCache.set(key, plans);
+  return plans;
+}
+
+// ---------------------------------------------------------------------------
+// Chained walk (full and ones-digit continuity)
+// ---------------------------------------------------------------------------
+
+const reachCache = new Map<string, Uint8Array[]>();
+
+/**
+ * reach[k][v] === 1 ⇔ from node v there is a walk of exactly k graph steps
+ * followed by one final-plan step.
+ */
+function reachTable(cacheKey: string, graph: Graph, plan: FinalPlan, k: number): Uint8Array[] {
+  let table = reachCache.get(cacheKey);
+  if (!table) {
+    const first = new Uint8Array(NODE_COUNT);
+    for (const left of plan.byLeft.keys()) first[left] = 1;
+    table = [first];
+    reachCache.set(cacheKey, table);
+  }
+  while (table.length <= k) {
+    const prev = table[table.length - 1];
+    const next = new Uint8Array(NODE_COUNT);
+    for (let v = 0; v < NODE_COUNT; v++) {
+      for (const f of graph.out[v]) {
+        if (prev[f.to]) {
+          next[v] = 1;
+          break;
+        }
+      }
+    }
+    table.push(next);
+  }
+  return table;
+}
+
+/** Pick an operation, favouring the ones used least so far in this chain. */
+function pickOp(ops: Operation[], use: Map<Operation, number>, rng: Rng): Operation {
+  const weights = ops.map((op) => 1 / (1 + (use.get(op) ?? 0)) ** 2);
+  let r = rng() * weights.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < ops.length; i++) {
+    r -= weights[i];
+    if (r < 0) return ops[i];
+  }
+  return ops[ops.length - 1];
+}
+
+function removeAt<T>(arr: T[], i: number): T {
+  const item = arr[i];
+  arr[i] = arr[arr.length - 1];
+  arr.pop();
+  return item;
 }
 
 /**
- * Generate a forward chain of two-digit math problems.
- * Each step's result feeds into the next step's left operand.
- * Used for hard difficulty with + and - to ensure genuinely challenging problems.
- * The chain wanders through two-digit territory and lands on targetDigit at the end.
+ * Builds a walk of exactly `length` facts whose last fact is from `plan`.
+ * Facts never repeat and a step never immediately undoes the previous one
+ * (5 × 2 = 10 → 10 ÷ 2 = 5). Returns null only if no such walk exists.
  */
-function generateForwardChain(
+function chainedWalk(
+  graph: Graph,
+  plan: FinalPlan,
+  reach: Uint8Array[],
+  length: number,
+  rng: Rng,
+): Fact[] | null {
+  const path: Fact[] = [];
+  const used = new Set<string>();
+  const visits = new Uint8Array(NODE_COUNT);
+  const opUse = new Map<Operation, number>();
+  let budget = SEARCH_BUDGET;
+
+  const dfs = (v: number, stepIdx: number): boolean => {
+    if (--budget < 0) return false;
+    const remaining = length - 1 - stepIdx;
+    const prev = path[path.length - 1];
+    const source = remaining === 0 ? (plan.byLeft.get(v) ?? []) : graph.out[v];
+    const nextReach = remaining === 0 ? null : reach[remaining - 1];
+
+    // Group candidates by op, unvisited targets first.
+    const fresh = new Map<Operation, Fact[]>();
+    const stale = new Map<Operation, Fact[]>();
+    for (const f of source) {
+      if (nextReach && !nextReach[f.to]) continue;
+      if (used.has(f.key)) continue;
+      if (prev && f.to === prev.left && f.right === prev.right && f.operator === INVERSE[prev.operator]) continue;
+      const bucket = visits[f.to] ? stale : fresh;
+      const list = bucket.get(f.operator);
+      if (list) list.push(f);
+      else bucket.set(f.operator, [f]);
+    }
+
+    const ops = OPERATIONS.filter((op) => fresh.has(op) || stale.has(op));
+    while (ops.length > 0) {
+      const op = pickOp(ops, opUse, rng);
+      const list = fresh.get(op)?.length ? fresh.get(op)! : stale.get(op);
+      if (!list || list.length === 0) {
+        ops.splice(ops.indexOf(op), 1);
+        continue;
+      }
+      const f = removeAt(list, randInt(0, list.length - 1, rng));
+
+      used.add(f.key);
+      path.push(f);
+      opUse.set(op, (opUse.get(op) ?? 0) + 1);
+      visits[f.to]++;
+      if (remaining === 0 || dfs(f.to, stepIdx + 1)) return true;
+      visits[f.to]--;
+      opUse.set(op, opUse.get(op)! - 1);
+      path.pop();
+      used.delete(f.key);
+      if (budget < 0) return false;
+    }
+    return false;
+  };
+
+  const starts: number[] = [];
+  for (let v = 0; v < NODE_COUNT; v++) if (reach[length - 1][v]) starts.push(v);
+  shuffle(starts, rng);
+  for (const start of starts) {
+    visits[start] = 1;
+    if (dfs(start, 0)) return path;
+    visits[start] = 0;
+    if (budget < 0) return null;
+  }
+  return null;
+}
+
+function toSteps(facts: Fact[]): MathStep[] {
+  return facts.map(({ left, operator, right, result }) => ({ left, operator, right, result }));
+}
+
+function generateChainedChain(
   targetDigit: number,
   difficulty: Difficulty,
-  operations: Operation[],
-  chainLengthOverride?: { min: number; max: number },
+  ops: Operation[],
+  length: number,
+  rng: Rng,
 ): PuzzleChain {
-  const constraints = DIFFICULTY_CONSTRAINTS[difficulty];
-  const lengths = chainLengthOverride ?? CHAIN_LENGTH;
-  const chainLength = randInt(lengths.min, lengths.max);
-  const maxVal = constraints.maxValue;
-  const steps: MathStep[] = [];
-
-  // Start with a random two-digit number
-  let current = randInt(25, 75);
-
-  for (let i = 0; i < chainLength - 1; i++) {
-    let op = operations[randInt(0, operations.length - 1)];
-
-    // Ensure we can apply the chosen op with two-digit operands and stay in range
-    const canAdd = current + 10 <= maxVal;
-    const canSub = current - 10 >= 10;
-
-    if (op === '+' && !canAdd) op = '-';
-    if (op === '-' && !canSub) op = '+';
-
-    let right: number;
-    let result: number;
-
-    if (op === '+') {
-      const maxRight = Math.min(maxVal - current, 50);
-      right = randInt(10, Math.max(10, maxRight));
-      result = current + right;
-    } else {
-      const maxRight = current - 10;
-      right = randInt(10, Math.max(10, maxRight));
-      result = current - right;
-    }
-
-    steps.push({ left: current, operator: op, right, result });
-    current = result;
+  const graph = getGraph(difficulty, ops);
+  const plans = finalPlans(targetDigit, difficulty, ops);
+  for (let p = 0; p < plans.length; p++) {
+    const plan = plans[p];
+    const reach = reachTable(`${difficulty}|${ops.join('')}|${targetDigit}|${p}`, graph, plan, length - 1);
+    if (!reach[length - 1].some(Boolean)) continue;
+    const facts = chainedWalk(graph, plan, reach, length, rng);
+    if (!facts) continue;
+    return { targetDigit, steps: toSteps(facts), useLastDigit: plan.useLastDigit, chainMode: 'full' };
   }
-
-  // Last step: reach targetDigit via subtraction
-  // current is guaranteed >= 10 from the loop, targetDigit is 0-9
-  const lastRight = current - targetDigit;
-  steps.push({ left: current, operator: '-', right: lastRight, result: targetDigit });
-
-  return { targetDigit, steps };
+  throw new Error(`Impossible: no ${length}-step chain to ${targetDigit} (${difficulty}, ${ops.join(' ')})`);
 }
 
-/**
- * Generate a chain of independent math facts (not backward-chained).
- * Used when multiplication or division is in the selected operations,
- * since backward chaining doesn't work well with * and / for small targets.
- * The last step's result's ones digit equals the target PIN digit.
- */
+// ---------------------------------------------------------------------------
+// Independent facts (monotone operation sets)
+// ---------------------------------------------------------------------------
+
+/** Order-insensitive key for commutative facts, so 3 + 4 and 4 + 3 count once. */
+function looseKey(f: MathStep): string {
+  if (f.operator === '+' || f.operator === '*') {
+    return `${Math.min(f.left, f.right)}${f.operator}${Math.max(f.left, f.right)}`;
+  }
+  return `${f.left}${f.operator}${f.right}`;
+}
+
 function generateIndependentChain(
   targetDigit: number,
   difficulty: Difficulty,
-  operations: Operation[],
-  chainLengthOverride?: { min: number; max: number },
+  ops: Operation[],
+  length: number,
+  rng: Rng,
 ): PuzzleChain {
-  // Pure multiplication: use chained ones-digit approach for all difficulties
-  if (operations.every(op => op === '*')) {
-    const maxFactor = difficulty === 'easy' ? 10 : difficulty === 'medium' ? 12 : 15;
-    return generateChainedMultiplicationChain(targetDigit, chainLengthOverride, maxFactor);
+  const graph = getGraph(difficulty, ops);
+  const plan = finalPlans(targetDigit, difficulty, ops)[0];
+  const used = new Set<string>();
+  const opUse = new Map<Operation, number>();
+  const steps: Fact[] = [];
+
+  const choose = (byOp: Map<Operation, Fact[]>, acceptable: (f: Fact) => boolean): Fact => {
+    const ops = [...byOp.keys()];
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const f = pick(byOp.get(pickOp(ops, opUse, rng))!, rng);
+      if (acceptable(f)) return f;
+    }
+    const all = [...byOp.values()].flat().filter(acceptable);
+    if (all.length === 0) throw new Error('Impossible: ran out of distinct facts');
+    return pick(all, rng);
+  };
+
+  const take = (f: Fact): void => {
+    used.add(looseKey(f));
+    opUse.set(f.operator, (opUse.get(f.operator) ?? 0) + 1);
+  };
+
+  // The encoding fact is chosen first (its pool can be tiny, e.g. only 2 × 2 = 4).
+  const finalByOp = new Map<Operation, Fact[]>();
+  for (const f of plan.facts) {
+    const list = finalByOp.get(f.operator);
+    if (list) list.push(f);
+    else finalByOp.set(f.operator, [f]);
   }
+  const finalFact = choose(finalByOp, () => true);
+  take(finalFact);
 
-  const constraints = DIFFICULTY_CONSTRAINTS[difficulty];
-  const lengths = chainLengthOverride ?? CHAIN_LENGTH;
-  const chainLength = randInt(lengths.min, lengths.max);
-  const steps: MathStep[] = [];
-  const usedKeys = new Set<string>();
-
-  const maxFactor = difficulty === 'easy' ? 10 : difficulty === 'medium' ? 12 : 15;
-
-  for (let i = 0; i < chainLength - 1; i++) {
-    const op = operations[randInt(0, operations.length - 1)];
-    let step: MathStep;
-    let attempts = 0;
-    do {
-      step = generateRandomFact(op, constraints, maxFactor);
-      attempts++;
-    } while (usedKeys.has(`${step.left}${step.operator}${step.right}`) && attempts < 30);
-    usedKeys.add(`${step.left}${step.operator}${step.right}`);
-    steps.push(step);
+  for (let i = 0; i < length - 1; i++) {
+    const prev = steps[steps.length - 1];
+    const isLastBeforeFinal = i === length - 2;
+    const f = choose(graph.byOp, (f) =>
+      !used.has(looseKey(f)) &&
+      // Never accidentally look chained (print would blank the left operand).
+      (!prev || f.left !== prev.result) &&
+      (!isLastBeforeFinal || f.result !== finalFact.left),
+    );
+    take(f);
+    steps.push(f);
   }
+  steps.push(finalFact);
 
-  // Last step: result = targetDigit (or ones digit for multiplication)
-  // For twoDigit mode, prefer subtraction since a+b=small is trivial
-  let lastOp: Operation;
-  if (operations.includes('*')) {
-    lastOp = '*';
-  } else if (constraints.twoDigit && operations.includes('-')) {
-    lastOp = '-';
-  } else {
-    lastOp = operations[randInt(0, operations.length - 1)];
-  }
-  if (lastOp === '*') {
-    const validPairs: [number, number][] = [];
-    for (let a = 2; a <= maxFactor; a++) {
-      for (let b = 2; b <= maxFactor; b++) {
-        if ((a * b) % 10 === targetDigit) validPairs.push([a, b]);
-      }
-    }
-    if (validPairs.length > 0) {
-      const [a, b] = validPairs[randInt(0, validPairs.length - 1)];
-      steps.push({ left: a, operator: '*', right: b, result: a * b });
-    } else {
-      // Fallback for digits where no a*b ends in targetDigit (shouldn't happen for 0-9)
-      const a = randInt(2, maxFactor);
-      const b = randInt(2, maxFactor);
-      steps.push({ left: a, operator: '*', right: b, result: a * b });
-    }
-  } else if (lastOp === '/') {
-    if (targetDigit === 0) {
-      const divisor = randInt(2, maxFactor);
-      steps.push({ left: 0, operator: '/', right: divisor, result: 0 });
-    } else {
-      const divisor = randInt(2, maxFactor);
-      steps.push({ left: targetDigit * divisor, operator: '/', right: divisor, result: targetDigit });
-    }
-  } else if (lastOp === '-') {
-    // a - b = targetDigit; for twoDigit mode, ensure both operands are two-digit
-    const minA = constraints.twoDigit ? 20 : 2;
-    const a = randInt(minA, constraints.maxValue);
-    const b = a - targetDigit;
-    if (b >= 1 && b <= constraints.maxValue) {
-      steps.push({ left: a, operator: '-', right: b, result: targetDigit });
-    } else {
-      steps.push({ left: targetDigit + 1, operator: '-', right: 1, result: targetDigit });
-    }
-  } else {
-    // Addition: a + b = targetDigit (only works for small targets)
-    if (targetDigit >= 2) {
-      const a = randInt(1, targetDigit - 1);
-      steps.push({ left: a, operator: '+', right: targetDigit - a, result: targetDigit });
-    } else {
-      // targetDigit 0 or 1: use subtraction instead
-      const a = randInt(constraints.twoDigit ? 20 : 2, constraints.maxValue);
-      const b = a - targetDigit;
-      steps.push({ left: a, operator: '-', right: b, result: targetDigit });
-    }
-  }
-
-  // Mark as useLastDigit when last step is multiplication (ones digit reveals PIN digit)
-  const lastStep = steps[steps.length - 1];
-  const useLastDigit = lastStep.operator === '*' && lastStep.result > 9;
-
-  return { targetDigit, steps, useLastDigit };
+  return { targetDigit, steps: toSteps(steps), useLastDigit: plan.useLastDigit, chainMode: 'independent' };
 }
 
-function generateRandomFact(
-  op: Operation,
-  constraints: { maxValue: number; allowCarry: boolean; twoDigit: boolean },
-  maxFactor: number,
-): MathStep {
-  const maxVal = constraints.maxValue;
-  const minOperand = constraints.twoDigit ? 10 : 1;
-  switch (op) {
-    case '+': {
-      const maxA = constraints.twoDigit ? maxVal - minOperand : maxVal;
-      const a = randInt(minOperand, Math.max(minOperand, maxA));
-      const maxB = maxVal - a;
-      const b = randInt(minOperand, Math.max(minOperand, maxB));
-      return { left: a, operator: '+', right: b, result: a + b };
-    }
-    case '-': {
-      const minA = constraints.twoDigit ? minOperand + minOperand : 2;
-      const a = randInt(Math.max(minA, minOperand), maxVal);
-      const maxB = constraints.twoDigit ? a - minOperand : a;
-      const b = randInt(minOperand, Math.max(minOperand, maxB));
-      return { left: a, operator: '-', right: b, result: a - b };
-    }
-    case '*': {
-      const a = randInt(2, maxFactor);
-      const b = randInt(2, maxFactor);
-      return { left: a, operator: '*', right: b, result: a * b };
-    }
-    case '/': {
-      const divisor = randInt(2, maxFactor);
-      const quotient = randInt(1, maxFactor);
-      return { left: divisor * quotient, operator: '/', right: divisor, result: quotient };
-    }
-    default:
-      return { left: 1, operator: '+', right: 1, result: 2 };
-  }
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * 'chained' when the set can both grow (+, ×) and shrink (−, ÷); otherwise
+ * 'independent'.
+ */
+export function getChainStrategy(operations: Operation[]): ChainStrategy {
+  const ops = normalizeOps(operations);
+  const up = ops.includes('+') || ops.includes('*');
+  const down = ops.includes('-') || ops.includes('/');
+  return up && down ? 'chained' : 'independent';
 }
 
+/**
+ * Generate one chain whose final step encodes `targetDigit` (exactly, or by
+ * the ones digit of the last result when `useLastDigit` is true).
+ */
 export function generateChain(
   targetDigit: number,
   difficulty: Difficulty,
   operations: Operation[],
   chainLengthOverride?: { min: number; max: number },
+  rng: Rng = Math.random,
 ): PuzzleChain {
-  const hasPlusMinus = operations.some(op => op === '+' || op === '-');
-  const hasMultDiv = operations.some(op => op === '*' || op === '/');
+  assertDigit(targetDigit);
+  assertDifficulty(difficulty);
+  const ops = normalizeOps(operations);
+  const lengths = chainLengthOverride ?? CHAIN_LENGTH;
+  assertLength(lengths);
+  const length = randInt(lengths.min, lengths.max, rng);
 
-  // More operations → longer chains for variety
-  const opsBonus = Math.max(0, operations.length - 2) * 2;
-  const baseLen = chainLengthOverride ?? CHAIN_LENGTH;
-  const adjustedLen = opsBonus > 0
-    ? { min: baseLen.min + opsBonus, max: baseLen.max + opsBonus }
-    : baseLen;
-
-  // Pure multiplication: ones-digit chaining
-  if (operations.every(op => op === '*')) {
-    const maxFactor = difficulty === 'easy' ? 10 : difficulty === 'medium' ? 12 : 15;
-    return generateChainedMultiplicationChain(targetDigit, adjustedLen, maxFactor);
-  }
-
-  // Pure division or */ without +/-: forward mult-div chain
-  if (hasMultDiv && !hasPlusMinus) {
-    return generateChainedMultDivChain(targetDigit, difficulty, adjustedLen);
-  }
-
-  // Hard mode, pure +/-: forward chain with two-digit numbers
-  if (difficulty === 'hard' && targetDigit <= 9 && !hasMultDiv) {
-    return generateForwardChain(targetDigit, difficulty, operations, adjustedLen);
-  }
-
-  // All other cases (including mixed +/-/*/ ): backward chain
-  // tryInvert handles all 4 operations; +/- are used when */ fails
-
-  const constraints = DIFFICULTY_CONSTRAINTS[difficulty];
-  const lengths = adjustedLen;
-  const chainLength = randInt(lengths.min, lengths.max);
-  const MAX_RETRIES = 100;
-
-  for (let retry = 0; retry < MAX_RETRIES; retry++) {
-    const backwardSteps: MathStep[] = [];
-    const usedKeys = new Set<string>();
-    const visitedResults = new Map<number, number>();
-    visitedResults.set(targetDigit, 1);
-    let currentResult = targetDigit;
-    let failed = false;
-
-    for (let stepIdx = 0; stepIdx < chainLength; stepIdx++) {
-      const isLastForwardStep = stepIdx === 0;
-      const opsToTry = shuffle([...operations]);
-
-      // Hard mode & digit 0: prefer subtraction for the final forward step
-      if ((difficulty === 'hard' || targetDigit === 0) && isLastForwardStep && operations.includes('-')) {
-        const idx = opsToTry.indexOf('-');
-        if (idx > 0) {
-          opsToTry.splice(idx, 1);
-          opsToTry.unshift('-');
-        }
-      }
-
-      let stepDone = false;
-      for (const op of opsToTry) {
-        const inv = tryInvert(op, currentResult, constraints);
-        if (inv !== null) {
-          const key = `${inv.previousResult}${op}${inv.operandRight}`;
-          // Skip if this exact step was already used (prevents repetition)
-          if (usedKeys.has(key)) continue;
-          // Skip if we've visited this intermediate result too many times (prevents loops)
-          const visitCount = visitedResults.get(inv.previousResult) || 0;
-          const maxVisits = Math.max(2, Math.ceil(chainLength / 4));
-          if (visitCount >= maxVisits) continue;
-
-          usedKeys.add(key);
-          visitedResults.set(inv.previousResult, visitCount + 1);
-          backwardSteps.push({
-            left: inv.previousResult,
-            operator: op,
-            right: inv.operandRight,
-            result: currentResult,
-          });
-          currentResult = inv.previousResult;
-          stepDone = true;
-          break;
-        }
-      }
-
-      if (!stepDone) { failed = true; break; }
-    }
-
-    if (failed) continue;
-    return { targetDigit, steps: backwardSteps.reverse() };
-  }
-
-  // Fallback: trivial chain with variety
-  // Always adds +/- pairs so the last step's result = targetDigit
-  const fb: MathStep[] = [];
-  const maxVal = constraints.maxValue;
-  if (targetDigit === 0) {
-    const a = randInt(1, Math.min(maxVal, 10));
-    fb.push({ left: a, operator: '-', right: a, result: 0 });
-  } else {
-    fb.push({ left: 1, operator: '+', right: targetDigit - 1, result: targetDigit });
-  }
-  const usedSteps = new Set<number>();
-  while (fb.length + 1 < lengths.min) {
-    const last = fb[fb.length - 1];
-    const maxStep = Math.min(maxVal - last.result, 8);
-    let step = randInt(2, Math.max(2, maxStep));
-    // Try to avoid repeating the same step size
-    for (let tries = 0; tries < 5 && usedSteps.has(step) && maxStep > 2; tries++) {
-      step = randInt(2, maxStep);
-    }
-    usedSteps.add(step);
-    if (step > 0 && last.result + step <= maxVal) {
-      fb.push({ left: last.result, operator: '+', right: step, result: last.result + step });
-      fb.push({ left: last.result + step, operator: '-', right: step, result: last.result });
-    } else {
-      fb.push({ left: last.result, operator: '+', right: 1, result: last.result + 1 });
-      fb.push({ left: last.result + 1, operator: '-', right: 1, result: last.result });
-    }
-  }
-  return { targetDigit, steps: fb.slice(0, lengths.max) };
+  return getChainStrategy(ops) === 'chained'
+    ? generateChainedChain(targetDigit, difficulty, ops, length, rng)
+    : generateIndependentChain(targetDigit, difficulty, ops, length, rng);
 }
 
-export function generatePuzzle(pin: string, difficulty: Difficulty, operations: Operation[]): Puzzle {
-  const chains = pin.split('').map((d) => generateChain(parseInt(d, 10), difficulty, operations));
+export function generatePuzzle(
+  pin: string,
+  difficulty: Difficulty,
+  operations: Operation[],
+  rng: Rng = Math.random,
+): Puzzle {
+  assertPin(pin);
+  normalizeOps(operations);
+  const chains = pin.split('').map((d) => generateChain(Number(d), difficulty, operations, undefined, rng));
   return { pin, chains };
 }
 
-export function generateMultiplicationTable(number: number, maxMultiplier: number = 10): MathStep[] {
+export function generateMultiplicationTable(
+  number: number,
+  maxMultiplier: number = 10,
+  rng: Rng = Math.random,
+): MathStep[] {
   const steps: MathStep[] = [];
   for (let m = 1; m <= maxMultiplier; m++) {
     steps.push({ left: number, operator: '*', right: m, result: number * m });
   }
-  return shuffle(steps);
+  return shuffle(steps, rng);
 }
 
-// Generate a chained forward chain alternating × and ÷ with full result carrying.
-// Used for pure ÷ or mixed ×÷ operations where backward chaining with +/- isn't available.
-// Builds backward from targetDigit, alternating ÷ and × inversions to stay bounded.
-// Forward reading example (target 7): 8 × 6 = 48 → 48 ÷ 6 = 8 → 8 × 7 = 56 → 56 ÷ 8 = 7
-function generateChainedMultDivChain(
-  targetDigit: number,
-  difficulty: Difficulty,
-  chainLengthOverride?: { min: number; max: number },
-): PuzzleChain {
-  const maxFactor = difficulty === 'easy' ? 10 : difficulty === 'medium' ? 12 : 15;
-  const lengths = chainLengthOverride ?? CHAIN_LENGTH;
-  const chainLength = randInt(lengths.min, lengths.max);
-  const maxIntermediate = 200;
-  const MAX_RETRIES = 100;
+// ---------------------------------------------------------------------------
+// Multiplication-PIN mode (ones-digit chaining)
+// ---------------------------------------------------------------------------
 
-  // target 0 can't be chained with *// (0 * anything = 0, dead end)
-  // Fall back to onesDigit multiplication chain
-  if (targetDigit === 0) {
-    return generateChainedMultiplicationChain(targetDigit, chainLengthOverride, maxFactor);
-  }
+/** Ones digits that may be carried into the next step (0, 1 are trivial; 5 only loops to 5/0). */
+const CARRY_DIGITS = [2, 3, 4, 6, 7, 8, 9];
+const ONES_FACTORS = [2, 3, 4, 5, 6, 7, 8, 9];
 
-  for (let retry = 0; retry < MAX_RETRIES; retry++) {
-    const steps: MathStep[] = [];
-    let current = targetDigit;
-    let failed = false;
-    const usedKeys = new Set<string>();
-
-    for (let i = 0; i < chainLength; i++) {
-      // Alternate: / then * (backward), reads as * then / (forward)
-      const useDiv = (i % 2 === 0);
-
-      if (useDiv) {
-        // / inversion: forward step is "prev ÷ right = current"
-        const validRights: number[] = [];
-        for (let r = 2; r <= maxFactor; r++) {
-          if (current * r <= maxIntermediate && !usedKeys.has(`${current * r}/${r}`)) {
-            validRights.push(r);
-          }
-        }
-        if (validRights.length === 0) { failed = true; break; }
-        const right = validRights[randInt(0, validRights.length - 1)];
-        const prev = current * right;
-        steps.unshift({ left: prev, operator: '/', right, result: current });
-        usedKeys.add(`${prev}/${right}`);
-        current = prev;
-      } else {
-        // * inversion: forward step is "prev × right = current"
-        const validRights: number[] = [];
-        for (let r = 2; r <= Math.min(maxFactor, current); r++) {
-          if (current % r === 0 && !usedKeys.has(`${current / r}*${r}`)) {
-            validRights.push(r);
-          }
-        }
-        if (validRights.length === 0) { failed = true; break; }
-        const right = validRights[randInt(0, validRights.length - 1)];
-        const prev = current / right;
-        steps.unshift({ left: prev, operator: '*', right, result: current });
-        usedKeys.add(`${prev}*${right}`);
-        current = prev;
+let onesGraph: Graph | null = null;
+function getOnesGraph(): Graph {
+  if (!onesGraph) {
+    const facts: Fact[] = [];
+    for (const a of CARRY_DIGITS) {
+      for (const b of ONES_FACTORS) {
+        const to = (a * b) % 10;
+        if (CARRY_DIGITS.includes(to)) facts.push(makeFact(a, '*', b, a * b, to));
       }
     }
-
-    if (failed) continue;
-
-    return { targetDigit, steps, chainMode: 'full' };
+    onesGraph = buildGraph(new Map([['*', facts]]));
   }
-
-  // Fallback: onesDigit multiplication chain
-  return generateChainedMultiplicationChain(targetDigit, chainLengthOverride, maxFactor);
+  return onesGraph;
 }
 
 /**
- * Generate a chained multiplication chain where the ones digit of each
- * result becomes the left operand of the next step. The ones digit of
- * the final result equals the target PIN digit.
+ * Chained multiplication facts: the ONES DIGIT of each result is the left
+ * operand of the next step, and the ones digit of the last result is the PIN
+ * digit. Example for 7:  4 × 8 = 32 → 2 × 6 = 12 → 2 × 9 = 18 → … → 9 × 3 = 27.
  *
- * Example for target digit 7:
- *   3 × 9 = 27   (ones digit: 7)
- *   7 × 4 = 28   (ones digit: 8)
- *   8 × 6 = 48   (ones digit: 8)
- *   8 × 9 = 72   (ones digit: 2)
- *   2 × 9 = 18   (ones digit: 8)
- *   8 × 4 = 32   (ones digit: 2)
- *   2 × 6 = 12   (ones digit: 2)
- *   → cifra jedinice poslednjeg = 2? Ne, treba 7...
- *
- * Algorithm builds backward from targetDigit to ensure correctness.
- * Intermediate carried digits avoid {0, 1, 5} to prevent dead ends.
+ * Built forwards over a reachability table, so it cannot dead-end; no fact
+ * repeats. Parity makes odd targets (1, 3, 5, 7, 9) use only the six odd facts
+ * among 3, 7, 9, so those chains are capped at 6–7 steps.
  */
-function generateChainedMultiplicationChain(
-  targetDigit: number,
-  chainLengthOverride?: { min: number; max: number },
-  maxFactor?: number,
-): PuzzleChain {
-  const SAFE_DIGITS = [2, 3, 4, 6, 7, 8, 9];
-  const lengths = chainLengthOverride ?? { min: 6, max: 8 };
-  const numSteps = randInt(lengths.min, lengths.max);
-  const maxRight = maxFactor ?? 9;
-
-  function findPairs(targetOnes: number, leftPool: number[]): [number, number][] {
-    const pairs: [number, number][] = [];
-    for (const a of leftPool) {
-      for (let b = 2; b <= maxRight; b++) {
-        if ((a * b) % 10 === targetOnes) pairs.push([a, b]);
-      }
-    }
-    return pairs;
-  }
-
-  const MAX_RETRIES = 50;
-
-  for (let retry = 0; retry < MAX_RETRIES; retry++) {
-    const steps: MathStep[] = [];
-    let currentTarget = targetDigit;
-    let failed = false;
-    const usedPairs = new Set<string>();
-
-    for (let i = numSteps - 1; i >= 0; i--) {
-      const isFirst = i === 0;
-      const leftPool = isFirst
-        ? Array.from({ length: maxRight - 1 }, (_, k) => k + 2)
-        : SAFE_DIGITS;
-
-      let pairs = findPairs(currentTarget, leftPool);
-      // Prefer unused pairs for variety
-      const freshPairs = pairs.filter(([a, b]) => !usedPairs.has(`${a}x${b}`));
-      if (freshPairs.length > 0) pairs = freshPairs;
-
-      if (pairs.length === 0) { failed = true; break; }
-
-      const [left, right] = pairs[randInt(0, pairs.length - 1)];
-      usedPairs.add(`${left}x${right}`);
-
-      steps.unshift({
-        left,
-        operator: '*',
-        right,
-        result: left * right,
-      });
-
-      currentTarget = left;
-    }
-
-    if (failed) continue;
-
-    return { targetDigit, steps, useLastDigit: true, chainMode: 'onesDigit' };
-  }
-
-  // Fallback: non-chained multiplication (should rarely happen)
-  const steps: MathStep[] = [];
-  const fallbackLen = randInt(lengths.min, lengths.max);
-  for (let i = 0; i < fallbackLen - 1; i++) {
-    const a = randInt(2, maxRight);
-    const b = randInt(2, maxRight);
-    steps.push({ left: a, operator: '*', right: b, result: a * b });
-  }
-  const validPairs: [number, number][] = [];
-  for (let a = 2; a <= maxRight; a++) {
-    for (let b = 2; b <= maxRight; b++) {
-      if ((a * b) % 10 === targetDigit) validPairs.push([a, b]);
+export function generateMultiplicationPinChain(targetDigit: number, rng: Rng = Math.random): PuzzleChain {
+  assertDigit(targetDigit);
+  const graph = getOnesGraph();
+  const finals: Fact[] = [];
+  for (const a of CARRY_DIGITS) {
+    for (const b of ONES_FACTORS) {
+      if ((a * b) % 10 === targetDigit) finals.push(makeFact(a, '*', b, a * b, targetDigit));
     }
   }
-  if (validPairs.length > 0) {
-    const [a, b] = validPairs[randInt(0, validPairs.length - 1)];
-    steps.push({ left: a, operator: '*', right: b, result: a * b });
+  const plan = makePlan(finals, true);
+  const { min, max } = MULTIPLICATION_PIN_CHAIN_LENGTH;
+  for (let length = randInt(min, max, rng); length >= 2; length--) {
+    const reach = reachTable(`ones|${targetDigit}`, graph, plan, length - 1);
+    if (!reach[length - 1].some(Boolean)) continue;
+    const facts = chainedWalk(graph, plan, reach, length, rng);
+    if (facts) return { targetDigit, steps: toSteps(facts), useLastDigit: true, chainMode: 'onesDigit' };
   }
-  return { targetDigit, steps, useLastDigit: true };
+  throw new Error(`Impossible: no ones-digit chain to ${targetDigit}`);
 }
 
-/**
- * Generate a PIN puzzle using chained multiplication facts.
- * Each step's ones digit feeds into the next step's left operand.
- * The last answer's ones digit reveals the PIN digit.
- */
-export function generateMultiplicationPinChain(targetDigit: number): PuzzleChain {
-  return generateChainedMultiplicationChain(targetDigit);
-}
-
-export function generateMultiplicationPinPuzzle(pin: string): Puzzle {
-  const chains = pin.split('').map((d) => generateMultiplicationPinChain(parseInt(d, 10)));
+export function generateMultiplicationPinPuzzle(pin: string, rng: Rng = Math.random): Puzzle {
+  assertPin(pin);
+  const chains = pin.split('').map((d) => generateMultiplicationPinChain(Number(d), rng));
   return { pin, chains };
 }
 
-export function generateMetaGrid(pin: string): MetaGrid {
+// ---------------------------------------------------------------------------
+// Adventure (meta) mode
+// ---------------------------------------------------------------------------
+
+export function generateMetaGrid(pin: string, rng: Rng = Math.random): MetaGrid {
+  assertPin(pin);
   // Create 10×10 grid filled with random digits 0-9
   const cells: number[][] = [];
   for (let r = 0; r < META_GRID_SIZE; r++) {
     const row: number[] = [];
     for (let c = 0; c < META_GRID_SIZE; c++) {
-      row.push(randInt(0, 9));
+      row.push(randInt(0, 9, rng));
     }
     cells.push(row);
   }
@@ -618,11 +604,11 @@ export function generateMetaGrid(pin: string): MetaGrid {
   const coordinates: MetaCoordinate[] = [];
 
   for (const ch of pin) {
-    const pinDigit = parseInt(ch, 10);
+    const pinDigit = Number(ch);
     let row: number, col: number;
     do {
-      row = randInt(0, META_GRID_SIZE - 1);
-      col = randInt(0, META_GRID_SIZE - 1);
+      row = randInt(0, META_GRID_SIZE - 1, rng);
+      col = randInt(0, META_GRID_SIZE - 1, rng);
     } while (usedPositions.has(`${row},${col}`));
     usedPositions.add(`${row},${col}`);
     cells[row][col] = pinDigit;
@@ -632,28 +618,23 @@ export function generateMetaGrid(pin: string): MetaGrid {
   return { cells, coordinates };
 }
 
+/** 8 chains (row, col per PIN digit) with per-difficulty lengths (≈ 72 steps max avg). */
 export function generateMetaPuzzle(
   pin: string,
   difficulty: Difficulty,
   operations: Operation[],
+  rng: Rng = Math.random,
 ): Puzzle {
-  const meta = generateMetaGrid(pin);
+  assertPin(pin);
+  assertDifficulty(difficulty);
+  normalizeOps(operations);
+  const meta = generateMetaGrid(pin, rng);
+  const chainLen = META_CHAIN_LENGTH_BY_DIFFICULTY[difficulty];
 
-  // Shorter chains for easier difficulties to avoid repetitive problems
-  let chainLen = META_CHAIN_LENGTH;
-  if (difficulty === 'easy') {
-    chainLen = { min: 5, max: 7 };
-  } else if (difficulty === 'medium') {
-    chainLen = { min: 7, max: 10 };
-  }
-
-  // Generate 8 chains (2 per PIN digit): one targeting the row, one targeting the col
   const chains: PuzzleChain[] = [];
   for (const coord of meta.coordinates) {
-    const rowChain = generateChain(coord.row, difficulty, operations, chainLen);
-    const colChain = generateChain(coord.col, difficulty, operations, chainLen);
-    chains.push(rowChain);
-    chains.push(colChain);
+    chains.push(generateChain(coord.row, difficulty, operations, chainLen, rng));
+    chains.push(generateChain(coord.col, difficulty, operations, chainLen, rng));
   }
 
   return { pin, chains, meta };
