@@ -258,7 +258,9 @@ describe('multiplication-PIN mode property test', () => {
           length: digit % 2 === 1 ? MULTIPLICATION_PIN_ODD_CHAIN_LENGTH : MULTIPLICATION_PIN_CHAIN_LENGTH,
           mode: 'onesDigit',
         });
-        for (let i = 1; i < chain.steps.length; i++) expect([0, 1, 5]).not.toContain(chain.steps[i].left);
+        for (let i = 1; i < chain.steps.length; i++) expect([0, 1]).not.toContain(chain.steps[i].left);
+        // 5 is absorbing: a carried 5 only ever leads to 5 or 0.
+        if (chain.steps.slice(1).some((s) => s.left === 5)) expect([0, 5]).toContain(digit);
       }
     }
     expect(chainsWithDuplicates / chains).toBeLessThan(0.05);
@@ -442,6 +444,11 @@ describe('quality regressions', () => {
     const avgOddSteps = oddPuzzles.reduce((a, p) => a + p.chains.reduce((b, c) => b + c.steps.length, 0), 0) / oddPuzzles.length;
     expect(avgOddSteps).toBeLessThanOrEqual(16);
 
+    // Digit 5 may carry 5 (5×3=15 → 5×7=35 …), which adds facts for it.
+    const fivePuzzles = Array.from({ length: 100 }, (_, seed) => generateMultiplicationPinPuzzle('5555', mulberry32(seed)));
+    expect(fivePuzzles.some((p) => p.chains.some((c) => c.steps.slice(1).some((st) => st.left === 5)))).toBe(true);
+    expect(crossChainRepetition(fivePuzzles)).toBeLessThan(0.85); // was ≈ 0.89 without carrying 5
+
     const evenPuzzles = Array.from({ length: 100 }, (_, seed) => generateMultiplicationPinPuzzle('2468', mulberry32(seed)));
     // Was ≈ 66 % before puzzle-level usage counts; now ≈ 31 %.
     expect(crossChainRepetition(evenPuzzles)).toBeLessThan(0.4);
@@ -462,7 +469,7 @@ describe('quality regressions', () => {
             mode: 'onesDigit',
           });
           // Parity: an odd target forces every carried digit to be odd (3, 7 or 9).
-          if (digit % 2 === 1) for (const s of chain.steps) expect([3, 7, 9]).toContain(s.left);
+          if (digit % 2 === 1) for (const s of chain.steps) expect(digit === 5 ? [3, 5, 7, 9] : [3, 7, 9]).toContain(s.left);
         });
       }
     }

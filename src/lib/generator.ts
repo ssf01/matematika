@@ -742,8 +742,13 @@ export function generateMultiplicationTable(
 // Multiplication-PIN mode (ones-digit chaining)
 // ---------------------------------------------------------------------------
 
-/** Ones digits that may be carried into the next step (0, 1 are trivial; 5 only loops to 5/0). */
-const CARRY_DIGITS = [2, 3, 4, 6, 7, 8, 9];
+/**
+ * Ones digits that may be carried into the next step (0 and 1 are trivial).
+ * 5 is absorbing (5 × odd ends in 5, 5 × even ends in 0), so the reachability
+ * table only routes chains through 5 when they end on 5 or 0 — it adds the
+ * ×5 facts (5×3=15, 5×7=35, 5×9=45, …) as variety for the digit 5.
+ */
+const CARRY_DIGITS = [2, 3, 4, 5, 6, 7, 8, 9];
 const ONES_FACTORS = [2, 3, 4, 5, 6, 7, 8, 9];
 
 let onesGraph: Graph | null = null;
@@ -800,7 +805,8 @@ function onesDigitChain(targetDigit: number, rng: Rng, usage: FactUsage): Puzzle
  * Parity limits odd targets (1, 3, 5, 7, 9): the last product must be
  * odd × odd, and an even carried digit can never become odd again (even ×
  * anything is even), so EVERY carried digit of an odd-target chain is odd,
- * i.e. one of 3, 7, 9 (1 and 5 are excluded). That leaves 6 non-final facts
+ * i.e. one of 3, 7, 9 — or 5, but only for the target 5, since 5 never leads
+ * anywhere else. For 1, 3, 7, 9 that leaves 6 non-final facts
  * (3×3, 3×9, 7×7, 7×9, 9×3, 9×7). Odd chains are therefore kept short
  * (MULTIPLICATION_PIN_ODD_CHAIN_LENGTH, 3–4 steps) so they don't keep
  * repeating the same facts; the puzzle-level usage counts spread whatever
