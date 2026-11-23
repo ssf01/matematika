@@ -1,124 +1,171 @@
-import React, { useState, useMemo } from 'react';
+import { useEffect, useRef } from 'react';
+import type { KeyboardEvent } from 'react';
 import { useTranslation } from '../../i18n/useTranslation';
 import { useGameStore } from '../../stores/gameStore';
+import type { MultiplicationTableState } from '../../stores/gameStore';
 import { generateMultiplicationTable } from '../../lib/generator';
 import { Button } from '../ui/Button';
-import { Card } from '../ui/Card';
 import { ProgressBar } from '../ui/ProgressBar';
+import { opSymbol } from './format';
 
 interface MultiplicationTableProps {
   number: number;
 }
 
+function freshTable(number: number): MultiplicationTableState {
+  return { number, steps: generateMultiplicationTable(number), answers: {}, checked: false };
+}
+
+/**
+ * Practice sheet for one multiplication table. Order, answers and the checked
+ * state live in the persisted store, so a reload keeps the child's work.
+ * "Try again" reshuffles the questions so the order can't be memorised.
+ */
 export function MultiplicationTable({ number: initialNumber }: MultiplicationTableProps) {
   const { t } = useTranslation();
   const reset = useGameStore((s) => s.reset);
-  const [selectedNumber, setSelectedNumber] = useState(initialNumber);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [checked, setChecked] = useState(false);
-  const [results, setResults] = useState<Record<number, boolean>>({});
+  const stored = useGameStore((s) => s.multiplicationTable);
+  const setTable = useGameStore((s) => s.setMultiplicationTable);
+  const setTableNumber = useGameStore((s) => s.setMultiplicationTableNumber);
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  const steps = useMemo(
-    () => generateMultiplicationTable(selectedNumber),
-    [selectedNumber],
-  );
+  const table = stored && stored.number === initialNumber ? stored : null;
 
-  const correctCount = Object.values(results).filter(Boolean).length;
+  useEffect(() => {
+    if (!table) setTable(freshTable(initialNumber));
+  }, [table, initialNumber, setTable]);
+
+  if (!table) return null;
+
+  const { steps, answers, checked } = table;
+  const results = steps.map((step, i) => parseInt(answers[i] ?? '', 10) === step.result);
+  const correctCount = results.filter(Boolean).length;
   const totalCount = steps.length;
 
-  const handleCheck = () => {
-    const newResults: Record<number, boolean> = {};
-    steps.forEach((step, i) => {
-      const userAnswer = parseInt(answers[i] || '', 10);
-      newResults[i] = !isNaN(userAnswer) && userAnswer === step.result;
-    });
-    setResults(newResults);
-    setChecked(true);
-  };
+  const update = (patch: Partial<MultiplicationTableState>) => setTable({ ...table, ...patch });
+
+  const handleCheck = () => update({ checked: true });
 
   const handleRetry = () => {
-    setAnswers({});
-    setResults({});
-    setChecked(false);
+    setTable(freshTable(table.number));
+    inputRefs.current[0]?.focus();
   };
 
   const handleChangeNumber = (num: number) => {
-    setSelectedNumber(num);
-    setAnswers({});
-    setResults({});
-    setChecked(false);
+    setTableNumber(num);
+    setTable(freshTable(num));
+  };
+
+  const handleKeyDown = (i: number, e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const next = inputRefs.current[i + 1];
+    if (next) next.focus();
+    else handleCheck();
   };
 
   return (
-    <div className="min-h-dvh p-4 sm:p-6 max-w-lg mx-auto">
-      <h1 className="text-3xl font-bold text-center mb-6">{t('multiplicationTable.title')}</h1>
+    <div className="screen-h w-full max-w-lg mx-auto px-4 pt-5 pb-10">
+      <h1 className="text-3xl sm:text-4xl font-black text-center mb-1">
+        <span aria-hidden="true" className="mr-2">🧮</span>
+        {t('multiplicationTable.title')}
+      </h1>
+      <p className="num text-center text-accent text-2xl font-black mb-4">
+        {table.number} {opSymbol('*')} …
+      </p>
 
-      <div className="flex flex-wrap justify-center gap-2 mb-6">
+      <div className="grid grid-cols-5 gap-2 mb-5">
         {Array.from({ length: 10 }, (_, i) => i + 1).map((num) => (
           <button
             key={num}
+            type="button"
             onClick={() => handleChangeNumber(num)}
-            className={`w-11 h-11 rounded-full font-bold text-lg transition-all duration-200
-              ${selectedNumber === num
-                ? 'bg-white/30 text-white scale-110 ring-2 ring-white/50'
-                : 'bg-white/10 text-white/70 hover:bg-white/20'}`}
+            aria-pressed={table.number === num}
+            className={`num h-12 rounded-2xl font-black text-xl border-2 transition-colors duration-150
+              ${table.number === num
+                ? 'accent-gradient text-on-accent border-transparent shadow-md shadow-black/25'
+                : 'bg-white/10 text-white border-white/15 hover:border-white/35'}`}
           >
             {num}
           </button>
         ))}
       </div>
 
-      {checked && (
-        <div className="mb-4">
-          <ProgressBar current={correctCount} total={totalCount} />
-          <p className="text-center mt-2 text-lg font-semibold">
-            {correctCount === totalCount
-              ? t('multiplicationTable.perfect')
-              : `${t('multiplicationTable.score')}: ${correctCount}/${totalCount}`}
-          </p>
-        </div>
-      )}
+      <div aria-live="polite">
+        {checked && (
+          <div className="mb-4 surface rounded-2xl p-4">
+            <ProgressBar current={correctCount} total={totalCount} />
+            <p className="text-center mt-2 text-xl font-black">
+              {correctCount === totalCount
+                ? t('multiplicationTable.perfect')
+                : `${t('multiplicationTable.score')}: ${correctCount}/${totalCount}`}
+            </p>
+          </div>
+        )}
+      </div>
 
-      <Card className="mb-6">
-        <div className="space-y-3">
+      <div className="surface rounded-3xl p-3 sm:p-5 mb-5">
+        <form
+          className="space-y-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleCheck();
+          }}
+        >
           {steps.map((step, i) => (
-            <div key={i} className="flex items-center gap-2 text-xl font-mono">
-              <span className="min-w-[2ch] text-right">{step.left}</span>
-              <span className="text-white/60">×</span>
-              <span className="min-w-[2ch]">{step.right}</span>
-              <span className="text-white/40">=</span>
-              <input
-                type="tel"
-                inputMode="numeric"
-                value={answers[i] || ''}
-                onChange={(e) => setAnswers({ ...answers, [i]: e.target.value.replace(/\D/g, '') })}
-                disabled={checked}
-                className={`w-20 h-12 text-xl font-bold text-center rounded-lg transition-all
-                  focus:outline-none focus:ring-2 focus:ring-white/30
-                  ${checked
-                    ? results[i]
-                      ? 'bg-green-500/20 border-2 border-green-500 text-green-400'
-                      : 'bg-red-500/20 border-2 border-red-500 text-red-400'
-                    : 'bg-white/10 border-2 border-white/20 text-white'}`}
-              />
-              {checked && !results[i] && (
-                <span className="text-white/50 text-sm ml-2">= {step.result}</span>
-              )}
+            <div
+              key={`${step.left}-${step.right}`}
+              className="num grid grid-cols-[minmax(2ch,auto)_1ch_minmax(2ch,auto)_1ch_1fr] items-center gap-x-2 sm:gap-x-3
+                px-2 py-1 text-3xl font-bold"
+            >
+              <span className="text-right">{step.left}</span>
+              <span className="text-center text-accent">{opSymbol(step.operator)}</span>
+              <span>{step.right}</span>
+              <span className="text-center text-white/70">=</span>
+              <span className="flex items-center gap-3">
+                <input
+                  ref={(el) => {
+                    inputRefs.current[i] = el;
+                  }}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="off"
+                  enterKeyHint={i === steps.length - 1 ? 'done' : 'next'}
+                  aria-label={`${t('a11y.answer')}: ${step.left} ${opSymbol(step.operator)} ${step.right}`}
+                  value={answers[i] ?? ''}
+                  onChange={(e) =>
+                    update({ answers: { ...answers, [i]: e.target.value.replace(/\D/g, '').slice(0, 3) } })
+                  }
+                  onKeyDown={(e) => handleKeyDown(i, e)}
+                  readOnly={checked}
+                  className={`num w-20 h-14 text-3xl font-black text-center rounded-2xl border-[3px] transition-colors
+                    focus:outline-none focus:shadow-[0_0_0_5px_color-mix(in_oklab,var(--th-accent)_45%,transparent)]
+                    ${checked
+                      ? results[i]
+                        ? 'bg-success/15 border-success text-success'
+                        : 'bg-red-50 border-red-500 text-red-700'
+                      : 'bg-white border-white text-gray-900'}`}
+                />
+                {checked && !results[i] && (
+                  <span className="text-white/90 text-lg font-bold">= {step.result}</span>
+                )}
+              </span>
             </div>
           ))}
-        </div>
-      </Card>
+        </form>
+      </div>
 
-      <div className="flex gap-4">
-        <Button variant="ghost" onClick={reset} className="flex-1">
+      <div className="flex gap-3">
+        <Button variant="secondary" onClick={reset} className="flex-1">
           {t('setup.back')}
         </Button>
         {!checked ? (
-          <Button variant="primary" onClick={handleCheck} className="flex-1">
+          <Button variant="primary" onClick={handleCheck} className="flex-[2]">
             {t('multiplicationTable.check')}
           </Button>
         ) : (
-          <Button variant="primary" onClick={handleRetry} className="flex-1">
+          <Button variant="primary" onClick={handleRetry} className="flex-[2]">
             {t('multiplicationTable.tryAgain')}
           </Button>
         )}

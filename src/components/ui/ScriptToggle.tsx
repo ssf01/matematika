@@ -1,17 +1,21 @@
-import React from 'react';
 import { useTranslation } from '../../i18n/useTranslation';
+import { SCRIPT_LANG } from '../../i18n/ScriptContext';
+import { lookup } from '../../i18n/translations';
 
 export function ScriptToggle() {
-  const { script, setScript } = useTranslation();
+  const { script, setScript, t } = useTranslation();
+  const target = script === 'cyrillic' ? 'latin' : 'cyrillic';
 
   return (
     <button
-      onClick={() => setScript(script === 'cyrillic' ? 'latin' : 'cyrillic')}
-      className="fixed top-4 right-4 z-50 px-3 py-1.5 rounded-full text-sm font-medium
-        bg-white/10 hover:bg-white/20 text-white/80 hover:text-white
-        backdrop-blur-sm border border-white/10 transition-all duration-200 no-print"
+      type="button"
+      onClick={() => setScript(target)}
+      aria-label={t('a11y.switchScript', { target: t(`script.${target}`) })}
+      className="no-print h-12 min-w-12 px-3 rounded-full text-sm font-bold tracking-wide
+        bg-white/12 hover:bg-white/22 text-white border border-white/20 transition-colors duration-150"
     >
-      {script === 'cyrillic' ? 'LAT' : 'ЋИР'}
+      {/* The label is written in the script it switches to, so it bypasses transliteration. */}
+      <span lang={SCRIPT_LANG[target]}>{lookup(`script.${target}Short`)}</span>
     </button>
   );
 }

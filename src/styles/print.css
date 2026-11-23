@@ -4,10 +4,25 @@
     margin: 15mm;
   }
 
+  html,
   body {
     background: white !important;
     color: black !important;
+  }
+
+  body {
     font-size: 14pt;
+  }
+
+  /* Drop the on-screen theme: plain black on white paper. */
+  .theme-root {
+    background: none !important;
+    color: black !important;
+    min-height: 0 !important;
+  }
+
+  .theme-bg {
+    display: none !important;
   }
 
   .no-print {
@@ -28,20 +43,6 @@
     margin-bottom: 2rem;
     border-bottom: 2px solid #333;
     padding-bottom: 1rem;
-  }
-
-  .print-chain {
-    padding: 0.5rem 0;
-    font-size: 16pt;
-    font-family: 'Courier New', monospace;
-  }
-
-  .print-blank {
-    display: inline-block;
-    width: 3em;
-    border-bottom: 2px solid #333;
-    text-align: center;
-    margin: 0 0.25em;
   }
 
   .print-answer-key {

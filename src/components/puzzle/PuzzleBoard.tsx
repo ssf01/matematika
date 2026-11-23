@@ -1,288 +1,166 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { PuzzleSection } from './PuzzleSection';
+import { MetaPuzzleFlow } from './MetaPuzzleFlow';
+import { StoryCard, useChainAnswerHandler, useFadeTransition, fadeClass } from './shared';
 import { useGameStore } from '../../stores/gameStore';
 import { useTranslation } from '../../i18n/useTranslation';
 import { useTheme } from '../themes/ThemeProvider';
 import { Button } from '../ui/Button';
-import { Card } from '../ui/Card';
-import { ShimmerButton } from '../ui/ShimmerButton';
 import { Sparkles } from '../ui/Sparkles';
-import { validateStep } from '../../lib/validator';
+import { TopBarSlot } from '../ui/TopBar';
+import { DigitChips } from './DigitChips';
 import type { Puzzle } from '../../lib/types';
-import { MetaPuzzleFlow } from './MetaPuzzleFlow';
 
 interface PuzzleBoardProps {
   puzzle: Puzzle;
 }
 
+/** Routes to the right flow; holds no hooks itself. */
+export function PuzzleBoard({ puzzle }: PuzzleBoardProps) {
+  return puzzle.meta ? <MetaPuzzleFlow puzzle={puzzle} /> : <StandardPuzzleFlow puzzle={puzzle} />;
+}
+
 type StoryPhase = 'intro' | 'solving' | 'chain-complete' | 'all-complete';
 
-export function PuzzleBoard({ puzzle }: PuzzleBoardProps) {
+/** Where to resume after a reload, derived from persisted progress. */
+function initialProgress(puzzle: Puzzle): { chain: number; phase: StoryPhase } {
+  const { completedChains, answers } = useGameStore.getState();
+  const next = puzzle.chains.findIndex((_, idx) => !completedChains.includes(idx));
+  if (next === -1) return { chain: puzzle.chains.length - 1, phase: 'all-complete' };
+  const started = completedChains.length > 0 || Object.keys(answers).length > 0;
+  return { chain: next, phase: started ? 'solving' : 'intro' };
+}
+
+export const REVEAL_DELAY_MS = 2500;
+
+export function StandardPuzzleFlow({ puzzle }: PuzzleBoardProps) {
   const { t } = useTranslation();
   const { theme, themeId } = useTheme();
   const answers = useGameStore((s) => s.answers);
   const completedChains = useGameStore((s) => s.completedChains);
-  const setAnswer = useGameStore((s) => s.setAnswer);
-  const markChainCompleted = useGameStore((s) => s.markChainCompleted);
   const setCurrentStep = useGameStore((s) => s.setCurrentStep);
+  const handleAnswer = useChainAnswerHandler(puzzle);
+  const { visible, run } = useFadeTransition();
 
-  const [activeChainIndex, setActiveChainIndex] = useState(0);
-  const [storyPhase, setStoryPhase] = useState<StoryPhase>('intro');
-  const [fadeIn, setFadeIn] = useState(true);
+  const [initial] = useState(() => initialProgress(puzzle));
+  const [activeChainIndex, setActiveChainIndex] = useState(initial.chain);
+  const [storyPhase, setStoryPhase] = useState<StoryPhase>(initial.phase);
 
-  // Meta mode: delegate to MetaPuzzleFlow
-  if (puzzle.meta) {
-    return <MetaPuzzleFlow puzzle={puzzle} />;
-  }
-
-  // On mount, figure out where we left off (in case of page reload with persisted state)
-  useEffect(() => {
-    if (completedChains.length > 0) {
-      const nextIncomplete = puzzle.chains.findIndex(
-        (_, idx) => !completedChains.includes(idx),
-      );
-      if (nextIncomplete === -1) {
-        // All chains already done
-        setActiveChainIndex(puzzle.chains.length - 1);
-        setStoryPhase('all-complete');
-      } else {
-        setActiveChainIndex(nextIncomplete);
-        setStoryPhase('solving');
-      }
-    }
-  }, []); // Only on mount
-
-  // Trigger fade-in animation on phase/chain changes
-  const triggerTransition = useCallback((callback: () => void) => {
-    setFadeIn(false);
-    setTimeout(() => {
-      callback();
-      setFadeIn(true);
-    }, 300);
-  }, []);
-
-  // When a chain is completed, transition to chain-complete phase
+  // When the active chain is completed, move on to the chapter ending.
   useEffect(() => {
     if (storyPhase === 'solving' && completedChains.includes(activeChainIndex)) {
-      triggerTransition(() => {
-        if (completedChains.length >= puzzle.chains.length) {
-          setStoryPhase('all-complete');
-        } else {
-          setStoryPhase('chain-complete');
-        }
-      });
+      run(() =>
+        setStoryPhase(
+          completedChains.length >= puzzle.chains.length ? 'all-complete' : 'chain-complete',
+        ),
+      );
     }
-  }, [completedChains, activeChainIndex, storyPhase, puzzle.chains.length, triggerTransition]);
+  }, [completedChains, activeChainIndex, storyPhase, puzzle.chains.length, run]);
 
-  // When all chains complete, go to reveal after a delay
   useEffect(() => {
-    if (storyPhase === 'all-complete') {
-      const timer = setTimeout(() => setCurrentStep('reveal'), 2500);
-      return () => clearTimeout(timer);
-    }
+    if (storyPhase !== 'all-complete') return;
+    const timer = setTimeout(() => setCurrentStep('reveal'), REVEAL_DELAY_MS);
+    return () => clearTimeout(timer);
   }, [storyPhase, setCurrentStep]);
 
-  const handleAnswer = (chainIdx: number, stepIdx: number, value: number): boolean => {
-    const step = puzzle.chains[chainIdx].steps[stepIdx];
-    const correct = validateStep(step, value);
-
-    if (correct) {
-      setAnswer(chainIdx, stepIdx, value);
-
-      // Check if this was the last step in the chain
-      const chain = puzzle.chains[chainIdx];
-      const allDone = chain.steps.every((s, i) => {
-        if (i === stepIdx) return true;
-        const ans = answers[`${chainIdx}-${i}`];
-        return ans !== null && ans !== undefined && ans === s.result;
-      });
-
-      if (allDone) {
-        markChainCompleted(chainIdx);
+  const handleNextChain = () =>
+    run(() => {
+      const next = puzzle.chains.findIndex((_, idx) => !completedChains.includes(idx));
+      if (next === -1) {
+        setStoryPhase('all-complete');
+      } else {
+        setActiveChainIndex(next);
+        setStoryPhase('solving');
       }
-    }
-
-    return correct;
-  };
-
-  const handleStartAdventure = () => {
-    triggerTransition(() => setStoryPhase('solving'));
-  };
-
-  const handleNextChain = () => {
-    triggerTransition(() => {
-      const nextIndex = activeChainIndex + 1;
-      setActiveChainIndex(nextIndex);
-      setStoryPhase('solving');
     });
-  };
 
-  const getStoryText = (key: string): string => {
-    return t(`story.${themeId}.${key}`);
-  };
-
-  const fadeClass = fadeIn
-    ? 'opacity-100 translate-y-0'
-    : 'opacity-0 translate-y-4';
+  const story = (key: string) => t(`story.${themeId}.${key}`);
+  const foundDigits = puzzle.chains.map((chain, idx) =>
+    completedChains.includes(idx) ? chain.targetDigit : null,
+  );
 
   return (
-    <div className="min-h-dvh p-4 sm:p-6 max-w-2xl mx-auto">
-      {/* Step indicators */}
-      <div className="mb-6 flex items-center justify-center gap-2">
-        {puzzle.chains.map((_, idx) => {
-          const done = completedChains.includes(idx);
-          const active = storyPhase === 'solving' && idx === activeChainIndex;
-          return (
-            <div
-              key={idx}
-              className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300
-                ${done
-                  ? 'bg-green-500/25 text-green-400 ring-2 ring-green-500/50'
-                  : active
-                    ? 'bg-white/15 text-white ring-2 ring-white/40 scale-110'
-                    : 'bg-white/5 text-white/30'}`}
-            >
-              {done ? '✓' : idx + 1}
-            </div>
-          );
-        })}
-      </div>
+    <div className="screen-h w-full max-w-2xl mx-auto px-4 pt-4 pb-10 sm:pt-6">
+      <TopBarSlot>
+        <DigitChips digits={foundDigits} activeIndex={storyPhase === 'solving' ? activeChainIndex : null} />
+      </TopBarSlot>
 
-      {/* Story content with fade transitions */}
-      <div className={`transition-all duration-300 ease-out ${fadeClass}`}>
-
-        {/* INTRO PHASE */}
+      <div className={`transition-all duration-300 ease-out ${fadeClass(visible)}`}>
         {storyPhase === 'intro' && (
-          <div className="flex flex-col items-center justify-center mt-8">
-            <StoryCard emoji={theme.emoji} themeConfig={theme}>
-              <p className="text-white/90 text-lg leading-relaxed">
-                {getStoryText('intro')}
-              </p>
+          <div className="flex flex-col items-center pt-4 sm:pt-10">
+            <StoryCard emoji={theme.emoji}>
+              <p className="text-white text-xl sm:text-2xl leading-relaxed font-medium">{story('intro')}</p>
             </StoryCard>
-            <ShimmerButton
-              onClick={handleStartAdventure}
-              shimmerColor={theme.accentColor + '66'}
-              className="mt-8"
-            >
+            <Button size="lg" onClick={() => run(() => setStoryPhase('solving'))} className="mt-6 w-full sm:w-auto sm:min-w-64">
               {t('story.next')}
-            </ShimmerButton>
+            </Button>
           </div>
         )}
 
-        {/* SOLVING PHASE */}
         {storyPhase === 'solving' && (
-          <div>
-            <StoryCard emoji={theme.emoji} themeConfig={theme} compact>
-              <p className="text-white/80 text-base leading-relaxed">
-                {getStoryText(`chapter${activeChainIndex + 1}`)}
+          <div className="space-y-4">
+            <StoryCard emoji={theme.emoji} compact>
+              <p className="text-white text-base sm:text-lg leading-snug">
+                {story(`chapter${activeChainIndex + 1}`)}
               </p>
             </StoryCard>
-
-            <div className="mt-6">
-              <PuzzleSection
-                chain={puzzle.chains[activeChainIndex]}
-                chainIndex={activeChainIndex}
-                answers={answers}
-                onAnswer={handleAnswer}
-                isCompleted={completedChains.includes(activeChainIndex)}
-              />
-            </div>
+            <PuzzleSection
+              key={activeChainIndex}
+              chain={puzzle.chains[activeChainIndex]}
+              chainIndex={activeChainIndex}
+              answers={answers}
+              onAnswer={handleAnswer}
+              isCompleted={completedChains.includes(activeChainIndex)}
+            />
           </div>
         )}
 
-        {/* CHAIN COMPLETE PHASE */}
         {storyPhase === 'chain-complete' && (
-          <div className="flex flex-col items-center justify-center mt-8">
-            <StoryCard emoji={theme.emoji} themeConfig={theme} glow>
-              <div className="text-center">
-                <p className="text-green-400 text-xl font-bold mb-3">
-                  {getStoryText(`complete${activeChainIndex + 1}`)}
-                </p>
-                <div className="flex items-center justify-center gap-2 text-white/60">
-                  <span className="text-sm">{t('puzzle.digit')} {activeChainIndex + 1} =</span>
-                  <Sparkles color={theme.accentColor} count={5}>
-                    <span className="text-3xl font-bold text-green-400">
-                      {puzzle.chains[activeChainIndex].targetDigit}
-                    </span>
-                  </Sparkles>
-                </div>
+          <div className="flex flex-col items-center pt-4 sm:pt-10">
+            <StoryCard emoji={theme.emoji} glow>
+              <p className="text-accent text-2xl sm:text-3xl font-black mb-5">
+                {story(`complete${activeChainIndex + 1}`)}
+              </p>
+              <div className="flex flex-col items-center gap-2">
+                <span className="text-white/90 text-lg font-bold">
+                  {t('puzzle.digit')} {activeChainIndex + 1}
+                </span>
+                <Sparkles color="var(--th-accent)" count={6}>
+                  <span className="num inline-flex w-24 h-28 rounded-3xl accent-gradient text-on-accent items-center justify-center text-7xl font-black shadow-xl shadow-black/30 animate-digit-reveal">
+                    {puzzle.chains[activeChainIndex].targetDigit}
+                  </span>
+                </Sparkles>
               </div>
             </StoryCard>
-            <ShimmerButton
-              onClick={handleNextChain}
-              shimmerColor={theme.accentColor + '66'}
-              className="mt-8"
-            >
+            <Button size="lg" onClick={handleNextChain} className="mt-6 w-full sm:w-auto sm:min-w-64">
               {t('story.next')}
-            </ShimmerButton>
+            </Button>
           </div>
         )}
 
-        {/* ALL COMPLETE PHASE */}
         {storyPhase === 'all-complete' && (
-          <div className="flex flex-col items-center justify-center mt-8">
-            <StoryCard emoji={theme.emoji} themeConfig={theme} glow>
-              <div className="text-center">
-                <p className="text-green-400 text-xl font-bold mb-4">
-                  {getStoryText(`complete${puzzle.chains.length}`)}
-                </p>
-                <div className="flex items-center justify-center gap-3">
-                  <Sparkles color={theme.accentColor} count={8}>
-                    <span className="flex gap-3">
-                      {puzzle.chains.map((chain, idx) => (
-                        <span
-                          key={idx}
-                          className="text-3xl font-bold text-green-400 animate-bounce"
-                          style={{ animationDelay: `${idx * 150}ms` }}
-                        >
-                          {chain.targetDigit}
-                        </span>
-                      ))}
+          <div className="flex flex-col items-center pt-4 sm:pt-10">
+            <StoryCard emoji={theme.emoji} glow>
+              <p className="text-accent text-2xl sm:text-3xl font-black mb-5">
+                {story(`complete${puzzle.chains.length}`)}
+              </p>
+              <Sparkles color="var(--th-accent)" count={8}>
+                <span className="flex gap-2 sm:gap-3">
+                  {puzzle.chains.map((chain, idx) => (
+                    <span
+                      key={idx}
+                      className="num inline-flex w-16 h-20 sm:w-20 sm:h-24 rounded-2xl accent-gradient text-on-accent items-center justify-center text-5xl sm:text-6xl font-black shadow-lg shadow-black/30 animate-digit-reveal"
+                      style={{ animationDelay: `${idx * 150}ms` }}
+                    >
+                      {chain.targetDigit}
                     </span>
-                  </Sparkles>
-                </div>
-              </div>
+                  ))}
+                </span>
+              </Sparkles>
             </StoryCard>
           </div>
         )}
-
       </div>
     </div>
-  );
-}
-
-/* ─── Story card sub-component ─── */
-
-interface StoryCardProps {
-  children: React.ReactNode;
-  emoji: string;
-  themeConfig: { primaryColor: string; glowColor: string };
-  compact?: boolean;
-  glow?: boolean;
-}
-
-function StoryCard({ children, emoji, themeConfig, compact, glow }: StoryCardProps) {
-  return (
-    <Card
-      className={`relative overflow-hidden ${glow ? 'ring-2 ring-green-500/50' : ''}`}
-      glow={glow}
-      shine={glow}
-      shineColor="rgba(34,197,94,0.4)"
-    >
-      <div
-        className="absolute inset-0 opacity-10 pointer-events-none"
-        style={{
-          background: `radial-gradient(circle at 50% 50%, ${themeConfig.glowColor}, transparent 70%)`,
-        }}
-      />
-      <div className="relative">
-        <div className={`flex items-start gap-4 ${compact ? '' : 'flex-col items-center text-center'}`}>
-          <span className={compact ? 'text-3xl flex-shrink-0 mt-0.5' : 'text-6xl mb-2 animate-float'}>
-            {emoji}
-          </span>
-          <div className="flex-1">{children}</div>
-        </div>
-      </div>
-    </Card>
   );
 }

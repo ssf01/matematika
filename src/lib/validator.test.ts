@@ -63,6 +63,18 @@ describe('getChainFinalDigit', () => {
     expect(getChainFinalDigit(chain)).toBe(5);
   });
 
+  it('returns the ones digit of the last result when useLastDigit is set', () => {
+    const chain: PuzzleChain = {
+      targetDigit: 0,
+      useLastDigit: true,
+      steps: [
+        { left: 3, operator: '+', right: 3, result: 6 },
+        { left: 6, operator: '+', right: 4, result: 10 },
+      ],
+    };
+    expect(getChainFinalDigit(chain)).toBe(0);
+  });
+
   it('returns targetDigit for empty chain', () => {
     const chain: PuzzleChain = { targetDigit: 3, steps: [] };
     expect(getChainFinalDigit(chain)).toBe(3);

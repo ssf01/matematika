@@ -1,4 +1,8 @@
-export const translations: Record<string, string> = {
+/**
+ * Source dictionary (Cyrillic). Latin is produced at runtime via `transliterate`.
+ * Placeholders use `{name}` and are replaced by `t(key, { name })` (all occurrences).
+ */
+export const translations = {
   'app.title': 'Математика',
   'app.subtitle': 'Реши задатке, откључај ТВ!',
 
@@ -10,13 +14,24 @@ export const translations: Record<string, string> = {
   'setup.next': 'Даље',
   'setup.back': 'Назад',
   'setup.start': 'Почни!',
+  'setup.steps': 'Кораци подешавања',
+  'setup.stepOf': 'Корак {n} од {total}',
+  'setup.step.theme': 'Тема',
+  'setup.step.difficulty': 'Тежина',
+  'setup.step.operations': 'Радње',
+  'setup.step.pin': 'ПИН',
+  'setup.step.mode': 'Режим',
+  'setup.parentOnly': 'Само за родитеље',
+  'setup.pinHint': 'Изабери 4 цифре. То је ПИН код који ће дете открити решавајући задатке, зато му га не показуј.',
+  'setup.operationsHint': 'Можеш изабрати једну или више радњи.',
+  'setup.or': 'или',
 
   'difficulty.easy': 'Лако',
-  'difficulty.easyDesc': 'Бројеви до 10, без преноса',
+  'difficulty.easyDesc': 'Бројеви до 10, таблице 2, 3, 5 и 10',
   'difficulty.medium': 'Средње',
-  'difficulty.mediumDesc': 'Бројеви до 18, са преносом',
+  'difficulty.mediumDesc': 'Бројеви до 20, таблице 2–5 и 10',
   'difficulty.hard': 'Тешко',
-  'difficulty.hardDesc': 'Двоцифрени бројеви',
+  'difficulty.hardDesc': 'Двоцифрени бројеви, таблице 2–10',
 
   'operation.add': 'Сабирање',
   'operation.subtract': 'Одузимање',
@@ -47,21 +62,46 @@ export const translations: Record<string, string> = {
   'puzzle.correct': 'Тачно!',
   'puzzle.incorrect': 'Покушај поново',
   'puzzle.completed': 'Сви задаци решени!',
+  'puzzle.cooldown': 'Полако! Сачекај мало па покушај поново.',
+  'puzzle.lastDigitHintCoordinate': 'Последња цифра резултата је координата!',
 
   'reveal.title': 'ПИН Код',
   'reveal.unlocked': 'Откључано!',
   'reveal.playAgain': 'Играј поново',
+  'reveal.completion.agent': 'Мисија завршена! Сеф је откључан!',
+  'reveal.completion.space': 'Лансирање успешно! Ракета полеће!',
+  'reveal.completion.treasure': 'Благо је пронађено! Ковчег је отворен!',
+  'reveal.completion.detective': 'Случај решен! Мистерија је откривена!',
 
   'script.cyrillic': 'Ћирилица',
   'script.latin': 'Latinica',
+  // Toggle labels, always shown in their own script (read with lookup(), never transliterated)
+  'script.cyrillicShort': 'ЋИР',
+  'script.latinShort': 'LAT',
+
+  // Screen-reader labels
+  'a11y.reset': 'Почни испочетка',
+  'a11y.home': 'Почетна',
+  'a11y.switchScript': 'Промени писмо: {target}',
+  'a11y.pinDigit': 'Цифра {n} ПИН кода',
+  'a11y.answer': 'Твој одговор',
+  'a11y.progress': 'Напредак',
+  'a11y.digitFound': '{n}. цифра: {digit}',
+  'a11y.digitHidden': '{n}. цифра: још није откривена',
+  'a11y.stepsSolved': 'Решено {done} од {total}',
 
   'print.title': 'Математички задаци',
   'print.instructions': 'Реши све задатке. Последња цифра сваког низа је цифра ПИН кода!',
   'puzzle.multiplicationHint': 'Последња цифра резултата је цифра ПИН кода!',
   'print.onesDigitInstruction': 'Цифру јединице резултата пренеси у следећи ред као први број.',
-  'print.answerKey': 'Решења (само за родитеље)',
+  'print.answerKey': 'Решења',
   'print.print': 'Штампај',
   'print.back': 'Назад',
+  'print.name': 'Име:',
+  'print.date': 'Датум:',
+  'print.parentsOnly': 'Само за родитеље',
+  'print.gridRow': 'Ред',
+  'print.gridCol': 'Колона',
 
   'multiplicationTable.title': 'Таблица множења',
   'multiplicationTable.chooseNumber': 'Изабери број',
@@ -176,7 +216,8 @@ export const translations: Record<string, string> = {
   'story.detective.meta.digitFound': 'Цифра {digit} пронађена! Случај се решава.',
 
   // Meta print
-  'print.meta.instructions': 'Реши задатке. Резултат последњег задатка у сваком сету је координата (ред или колона). Упиши координате, пронађи то поље на мапи и открој цифру ПИН кода!',
+  'print.meta.instructions': 'Реши задатке. Резултат последњег задатка у сваком сету је координата (ред или колона). Упиши координате, пронађи то поље на мапи и откриј цифру ПИН кода!',
+  'print.meta.instructionsOnesDigit': 'Реши задатке. Последња цифра (цифра јединица) резултата последњег задатка у сваком сету је координата (ред или колона). Упиши координате, пронађи то поље на мапи и откриј цифру ПИН кода!',
   'print.meta.set': 'Сет',
   'print.meta.row': 'Ред',
   'print.meta.col': 'Колона',
@@ -185,4 +226,29 @@ export const translations: Record<string, string> = {
   // Multiplication quick-start
   'setup.multiplicationQuick': 'Таблица множења',
   'setup.multiplicationQuickDesc': 'Само вежбање, без ПИН кода',
-};
+} as const;
+
+/** Every key known at compile time. */
+export type TranslationKey = keyof typeof translations;
+
+/**
+ * Accepts known keys (with autocomplete) but also any string, so template keys like
+ * `story.${themeId}.intro` still compile. Unknown keys fall back to the key at runtime.
+ */
+export type TranslationKeyLike = TranslationKey | (string & {});
+
+export type TranslationParams = Record<string, string | number>;
+
+/** Replace every `{param}` occurrence in `template`. Unknown placeholders are left intact. */
+export function interpolate(template: string, params?: TranslationParams): string {
+  if (!params) return template;
+  return template.replace(/\{(\w+)\}/g, (match, name: string) =>
+    Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match,
+  );
+}
+
+/** Look up a raw (Cyrillic) translation; returns the key itself when missing. */
+export function lookup(key: string): string {
+  const dict: Readonly<Record<string, string>> = translations;
+  return Object.prototype.hasOwnProperty.call(dict, key) ? dict[key] : key;
+}

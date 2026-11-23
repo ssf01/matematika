@@ -1,13 +1,12 @@
-import React from 'react';
-import { useTheme } from '../themes/ThemeProvider';
 import { useTranslation } from '../../i18n/useTranslation';
-import type { PuzzleChain } from '../../lib/types';
+import type { Operation, PuzzleChain } from '../../lib/types';
 
-const OP_SYMBOLS: Record<string, string> = {
+/** Math symbols used on worksheets (Serbian school notation: ":" for division). */
+export const PRINT_OP_SYMBOLS: Record<Operation, string> = {
   '+': '+',
   '-': '−',
   '*': '×',
-  '/': '÷',
+  '/': ':',
 };
 
 interface PrintSectionProps {
@@ -19,41 +18,52 @@ interface PrintSectionProps {
   chainedSteps?: boolean;
 }
 
+/**
+ * Whether step `i` takes its left operand from the previous step's result.
+ * Continuity is detected from the actual numbers, so chains generated without
+ * carry-over (e.g. chainMode 'independent') never get a blank left operand.
+ */
+export function isStepChained(chain: PuzzleChain, i: number): boolean {
+  if (i === 0) return false;
+  // chainMode may gain more variants (e.g. 'independent'); compare as string.
+  const mode = chain.chainMode as string | undefined;
+  if (mode === 'independent') return false;
+  const prevResult = chain.steps[i - 1].result;
+  if (mode === 'onesDigit') return prevResult % 10 === chain.steps[i].left;
+  return prevResult === chain.steps[i].left;
+}
+
 export function PrintSection({ chain, chainIndex, showAnswers, hideHeader, footerLabel, chainedSteps }: PrintSectionProps) {
-  const { theme } = useTheme();
   const { t } = useTranslation();
 
   const label = footerLabel ?? t('puzzle.pinDigit');
   const blank = (
-    <span className="inline-block w-16 border-b-2 border-white/30 print:border-gray-400 text-center">
+    <span className="inline-block w-16 border-b-2 border-gray-500 text-center">
       &nbsp;
     </span>
   );
 
-  // Detect which steps are actually chained
-  const isChained = (i: number) => {
-    if (!chainedSteps || i === 0) return false;
-    const prevResult = chain.steps[i - 1].result;
-    if (chain.chainMode === 'onesDigit') {
-      return prevResult % 10 === chain.steps[i].left;
-    }
-    return prevResult === chain.steps[i].left;
-  };
+  const isChained = (i: number) => Boolean(chainedSteps) && isStepChained(chain, i);
+  const hasOnesDigitCarry =
+    chain.chainMode === 'onesDigit' && chain.steps.some((_, i) => isStepChained(chain, i));
 
   return (
     <div className="print-section mb-6 break-inside-avoid">
       {!hideHeader && (
-        <h3 className="font-bold text-lg mb-3 text-white/80 print:text-gray-800">
+        <h3 className="font-bold text-lg mb-3 text-gray-800">
           {t('puzzle.digit')} {chainIndex + 1}
         </h3>
       )}
-      {chain.chainMode === 'onesDigit' && !showAnswers && (
-        <div className="text-xs text-white/50 print:text-gray-500 italic mb-2">
+      {chain.useLastDigit && chain.chainMode !== 'onesDigit' && !showAnswers && (
+        <p className="text-xs text-gray-600 italic mb-2">{t('puzzle.multiplicationHint')}</p>
+      )}
+      {hasOnesDigitCarry && chainedSteps && !showAnswers && (
+        <div className="text-xs text-gray-600 italic mb-2">
           <p>{t('print.onesDigitInstruction')}</p>
-          <div className="flex items-center gap-1 mt-1 font-mono not-italic text-[10px]">
-            <span>3 × 9 = 2<span className="font-bold underline text-white/70 print:text-gray-700">7</span></span>
+          <div className="flex items-center gap-1 mt-1 font-mono not-italic text-[10px]" aria-hidden="true">
+            <span>3 {PRINT_OP_SYMBOLS['*']} 9 = 2<span className="font-bold underline text-gray-800">7</span></span>
             <span className="mx-1">→</span>
-            <span><span className="font-bold underline text-white/70 print:text-gray-700">7</span> × 4 = ...</span>
+            <span><span className="font-bold underline text-gray-800">7</span> {PRINT_OP_SYMBOLS['*']} 4 = ...</span>
           </div>
         </div>
       )}
@@ -61,7 +71,7 @@ export function PrintSection({ chain, chainIndex, showAnswers, hideHeader, foote
         {chain.steps.map((step, i) => (
           <div key={i} className="flex items-center gap-2">
             {isChained(i) && !showAnswers ? blank : <span>{step.left}</span>}
-            <span>{OP_SYMBOLS[step.operator]}</span>
+            <span>{PRINT_OP_SYMBOLS[step.operator]}</span>
             <span>{step.right}</span>
             <span>=</span>
             {showAnswers ? (
@@ -72,12 +82,12 @@ export function PrintSection({ chain, chainIndex, showAnswers, hideHeader, foote
           </div>
         ))}
       </div>
-      <div className="mt-2 text-sm text-white/50 print:text-gray-500">
+      <div className="mt-2 text-sm text-gray-600">
         → {label}:{' '}
         {showAnswers ? (
           <span className="font-bold text-lg">{chain.targetDigit}</span>
         ) : (
-          <span className="inline-block w-8 border-b-2 border-white/30 print:border-gray-400">&nbsp;</span>
+          <span className="inline-block w-8 border-b-2 border-gray-500">&nbsp;</span>
         )}
       </div>
     </div>

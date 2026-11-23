@@ -1,5 +1,6 @@
 export { transliterate, cyrillicToLatinMap } from './transliterate';
-export { translations } from './translations';
-export { ScriptContext, ScriptProvider } from './ScriptContext';
-export type { ScriptContextValue } from './ScriptContext';
+export { translations, interpolate, interpolate as tParam, lookup } from './translations';
+export type { TranslationKey, TranslationKeyLike, TranslationParams } from './translations';
+export { ScriptContext, ScriptProvider, SCRIPT_LANG, translate } from './ScriptContext';
+export type { ScriptContextValue, TranslateFn } from './ScriptContext';
 export { useTranslation } from './useTranslation';

@@ -1,16 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useGameStore } from '../stores/gameStore';
 import { ScriptProvider } from '../i18n/ScriptContext';
 import { ThemeProvider } from './themes/ThemeProvider';
-import { ThemeBackground } from './themes/ThemeBackground';
+import { ThemeShell } from './themes/ThemeBackground';
 import { SetupWizard } from './setup/SetupWizard';
 import { HandoverScreen } from './reveal/HandoverScreen';
 import { PuzzleBoard } from './puzzle/PuzzleBoard';
 import { MultiplicationTable } from './puzzle/MultiplicationTable';
 import { PrintableWorksheet } from './print/PrintableWorksheet';
 import { PinReveal } from './reveal/PinReveal';
-import { ScriptToggle } from './ui/ScriptToggle';
-import { ResetButton } from './ui/ResetButton';
+import { TopBarLayout } from './ui/TopBar';
 
 export default function App() {
   const currentStep = useGameStore((s) => s.currentStep);
@@ -20,64 +19,26 @@ export default function App() {
   const multiplicationTableNumber = useGameStore((s) => s.multiplicationTableNumber);
 
   const content = (() => {
-    switch (currentStep) {
-      case 'setup':
-        return <SetupWizard />;
+    if (currentStep === 'setup' || !theme) return <SetupWizard />;
 
+    const themed = (node: ReactNode) => <ThemeProvider themeId={theme}>{node}</ThemeProvider>;
+
+    switch (currentStep) {
       case 'handover':
-        if (theme) {
-          return (
-            <ThemeProvider themeId={theme}>
-              <ThemeBackground />
-              <HandoverScreen />
-            </ThemeProvider>
-          );
-        }
-        return <SetupWizard />;
+        return themed(<HandoverScreen />);
 
       case 'playing':
-        if (!theme) return <SetupWizard />;
-
-        // Multiplication table mode
         if (multiplicationTableNumber !== null) {
-          return (
-            <ThemeProvider themeId={theme}>
-              <ThemeBackground />
-              <MultiplicationTable number={multiplicationTableNumber} />
-            </ThemeProvider>
-          );
+          return themed(<MultiplicationTable number={multiplicationTableNumber} />);
         }
-
-        // Print mode (standard or meta)
-        if ((mode === 'print' || mode === 'meta-print') && puzzle) {
-          return (
-            <ThemeProvider themeId={theme}>
-              <PrintableWorksheet puzzle={puzzle} />
-            </ThemeProvider>
-          );
+        if (!puzzle) return <SetupWizard />;
+        if (mode === 'print' || mode === 'meta-print') {
+          return themed(<PrintableWorksheet puzzle={puzzle} />);
         }
-
-        // Digital mode (standard or meta)
-        if (puzzle) {
-          return (
-            <ThemeProvider themeId={theme}>
-              <ThemeBackground />
-              <PuzzleBoard puzzle={puzzle} />
-            </ThemeProvider>
-          );
-        }
-        return <SetupWizard />;
+        return themed(<PuzzleBoard puzzle={puzzle} />);
 
       case 'reveal':
-        if (theme) {
-          return (
-            <ThemeProvider themeId={theme}>
-              <ThemeBackground />
-              <PinReveal />
-            </ThemeProvider>
-          );
-        }
-        return <SetupWizard />;
+        return themed(<PinReveal />);
 
       default:
         return <SetupWizard />;
@@ -86,11 +47,12 @@ export default function App() {
 
   return (
     <ScriptProvider>
-      <div className="min-h-dvh">
-        <ScriptToggle />
-        <ResetButton />
-        {content}
-      </div>
+      {/* The wizard adopts the chosen theme as soon as one is picked. */}
+      <ThemeShell themeId={theme ?? 'default'}>
+        <TopBarLayout>
+          <main>{content}</main>
+        </TopBarLayout>
+      </ThemeShell>
     </ScriptProvider>
   );
 }

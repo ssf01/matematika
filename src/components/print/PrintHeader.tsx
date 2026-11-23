@@ -1,9 +1,9 @@
-import React from 'react';
 import { useTranslation } from '../../i18n/useTranslation';
+import type { TranslationKeyLike } from '../../i18n/translations';
 import { useTheme } from '../themes/ThemeProvider';
 
 interface PrintHeaderProps {
-  instructionKey?: string;
+  instructionKey?: TranslationKeyLike;
 }
 
 export function PrintHeader({ instructionKey }: PrintHeaderProps) {
@@ -13,14 +13,18 @@ export function PrintHeader({ instructionKey }: PrintHeaderProps) {
   return (
     <div className="print-header text-center mb-8 pb-4 border-b-2 border-gray-700">
       <h1 className="text-3xl font-bold mb-2">
-        {theme.emoji} {t('print.title')}
+        <span aria-hidden="true">{theme.emoji}</span> {t('print.title')}
       </h1>
-      <p className="text-white/60 print:text-gray-600 mb-4">{t(instructionKey ?? 'print.instructions')}</p>
-      <div className="text-left text-white/40 print:text-gray-500">
-        <span>{'Име: '}</span>
-        <span className="inline-block w-48 border-b border-white/30 print:border-gray-400">&nbsp;</span>
-        <span className="ml-8">{'Датум: '}</span>
-        <span className="inline-block w-32 border-b border-white/30 print:border-gray-400">&nbsp;</span>
+      <p className="text-gray-700 mb-4">{t(instructionKey ?? 'print.instructions')}</p>
+      <div className="flex flex-wrap gap-x-8 gap-y-3 text-left text-gray-700">
+        <span>
+          <span>{t('print.name')} </span>
+          <span className="inline-block w-48 border-b border-gray-500">&nbsp;</span>
+        </span>
+        <span>
+          <span>{t('print.date')} </span>
+          <span className="inline-block w-32 border-b border-gray-500">&nbsp;</span>
+        </span>
       </div>
     </div>
   );
