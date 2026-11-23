@@ -61,3 +61,18 @@ describe('transliterate', () => {
     expect(transliterate('ЊЕГА')).toBe('NJEGA');
   });
 });
+
+describe('transliterate: per-word all-caps detection', () => {
+  it.each([
+    ['ЉУБАВ је', 'LJUBAV je'],
+    ['Мали ЏЕП', 'Mali DŽEP'],
+    ['Њ', 'Nj'],
+    ['Љиљана', 'Ljiljana'],
+    ['ЊЕГОШ и Љиљана', 'NJEGOŠ i Ljiljana'],
+    ['Љ ЉУБАВ', 'Lj LJUBAV'],
+    ['ПИН: ЏАК, Џак', 'PIN: DŽAK, Džak'],
+    ['ЏЏ', 'DŽDŽ'],
+  ])('%s → %s', (input, expected) => {
+    expect(transliterate(input)).toBe(expected);
+  });
+});
