@@ -7,6 +7,7 @@ import {
   MIN_FACTOR,
   MAX_FACTOR,
   MULTIPLICATION_PIN_CHAIN_LENGTH,
+  MAX_CHAIN_LENGTH,
 } from './constants';
 import type { Rng } from './rng';
 
@@ -21,13 +22,19 @@ import type { Rng } from './rng';
  * Strategy by operation set (see getChainStrategy):
  * - 'chained' — the set has an increasing op (+ or ×) AND a decreasing op
  *   (− or ÷). Each step's left operand is the previous result. The walk is
- *   constructed forwards over a precomputed "can still reach the final step in
- *   exactly k steps" table, with backtracking, so it cannot dead-end.
+ *   constructed forwards over a precomputed "which op sets can still reach the
+ *   final step in exactly k steps" table, with backtracking, so it cannot
+ *   dead-end and can insist that every selected op appears (when possible).
  *   {×, ÷} is chained too; every step is a real times-table fact.
  * - 'independent' — monotone sets ({+}, {−}, {×}, {÷}, {+,×}, {−,÷}) cannot walk
  *   back down (or up) to a digit, so the chain is a list of distinct,
  *   unrelated facts using only the selected ops; only the LAST fact encodes the
  *   digit.
+ *
+ * Variety: no fact repeats within a chain (9 + 1 and 1 + 9 count as one), no
+ * step returns straight to the previous left operand, ±1 steps are rare, and
+ * the chains of one puzzle prefer facts the other chains have not used and are
+ * never identical.
  *
  * The last fact encodes the target digit, in order of preference:
  *   1. exactly (result === digit),
@@ -41,17 +48,45 @@ import type { Rng } from './rng';
 const OPERATIONS: Operation[] = ['+', '-', '*', '/'];
 const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard'];
 const INVERSE: Record<Operation, Operation> = { '+': '-', '-': '+', '*': '/', '/': '*' };
+const OP_BIT: Record<Operation, number> = { '+': 1, '-': 2, '*': 4, '/': 8 };
 /** Values are 0..100 (10 × 10 is the largest product). */
 const NODE_COUNT = MAX_FACTOR * MAX_FACTOR + 1;
-/** Max DFS expansions per chain before giving up (never hit in practice). */
-const SEARCH_BUDGET = 50_000;
+/** Max DFS expansions per walk attempt before giving up. */
+const SEARCH_BUDGET = 20_000;
+/** Budget for the first, strictest pass (every selected op must appear). */
+const COVERAGE_BUDGET = 3_000;
+/** Attempts per pass when a walk runs out of budget (a fresh random order often succeeds). */
+const WALK_ATTEMPTS = 2;
+/** Re-rolls per chain when it would be identical to an earlier chain of the same puzzle. */
+const DISTINCT_CHAIN_ATTEMPTS = 20;
+/** Relative weight of a ±1 step (9 + 1, 7 − 1): allowed, but much rarer than other facts. */
+const PLUS_MINUS_ONE_WEIGHT = 0.2;
 
 export type ChainStrategy = 'chained' | 'independent';
 
 interface Fact extends MathStep {
   /** Node the next step continues from (result, or its ones digit). */
   to: number;
+  /** Exact key: 3*4 and 4*3 differ. */
   key: string;
+  /** Commutative-loose key: 3 + 4 and 4 + 3 are the same fact. */
+  loose: string;
+  /** OP_BIT of the operator. */
+  bit: number;
+  /** Selection weight (±1 steps are down-weighted). */
+  weight: number;
+}
+
+/** Puzzle-level state shared by the chains of one puzzle. */
+interface FactUsage {
+  /** Usage counts per loose fact key; chains prefer facts used least. */
+  counts: Map<string, number>;
+  /** Signatures of the chains already in the puzzle; a new chain must differ. */
+  taken: Set<string>;
+}
+
+function newUsage(): FactUsage {
+  return { counts: new Map(), taken: new Set() };
 }
 
 interface Graph {
@@ -117,8 +152,11 @@ function assertDifficulty(difficulty: Difficulty): void {
 }
 
 function assertLength(len: { min: number; max: number }): void {
-  if (!Number.isInteger(len.min) || !Number.isInteger(len.max) || len.min < 1 || len.max < len.min) {
-    throw new Error(`Invalid chain length range ${len.min}..${len.max}`);
+  if (
+    !Number.isInteger(len.min) || !Number.isInteger(len.max) ||
+    len.min < 1 || len.max < len.min || len.max > MAX_CHAIN_LENGTH
+  ) {
+    throw new Error(`Invalid chain length range ${len.min}..${len.max} (allowed 1..${MAX_CHAIN_LENGTH})`);
   }
 }
 
@@ -127,7 +165,34 @@ function assertLength(len: { min: number; max: number }): void {
 // ---------------------------------------------------------------------------
 
 function makeFact(left: number, operator: Operation, right: number, result: number, to = result): Fact {
-  return { left, operator, right, result, to, key: `${left}${operator}${right}` };
+  const plusMinusOne = (operator === '+' || operator === '-') && right === 1;
+  return {
+    left, operator, right, result, to,
+    key: `${left}${operator}${right}`,
+    loose: looseKey({ left, operator, right, result }),
+    bit: OP_BIT[operator],
+    weight: plusMinusOne ? PLUS_MINUS_ONE_WEIGHT : 1,
+  };
+}
+
+/** Order-insensitive key for commutative facts, so 3 + 4 and 4 + 3 count once. */
+function looseKey(f: MathStep): string {
+  if (f.operator === '+' || f.operator === '*') {
+    return `${Math.min(f.left, f.right)}${f.operator}${Math.max(f.left, f.right)}`;
+  }
+  return `${f.left}${f.operator}${f.right}`;
+}
+
+/** Weighted random index into a list of facts. */
+function pickWeightedIndex(list: Fact[], rng: Rng): number {
+  let total = 0;
+  for (const f of list) total += f.weight;
+  let r = rng() * total;
+  for (let i = 0; i < list.length; i++) {
+    r -= list[i].weight;
+    if (r < 0) return i;
+  }
+  return list.length - 1;
 }
 
 function isTablePair(a: number, b: number, tables: number[]): boolean {
@@ -249,30 +314,49 @@ function finalPlans(digit: number, difficulty: Difficulty, ops: Operation[]): Fi
 // Chained walk (full and ones-digit continuity)
 // ---------------------------------------------------------------------------
 
-const reachCache = new Map<string, Uint8Array[]>();
+/** SUPERSETS[need] = 16-bit set of op masks m with (m & need) === need. */
+const SUPERSETS = Array.from({ length: 16 }, (_, need) => {
+  let set = 0;
+  for (let m = 0; m < 16; m++) if ((m & need) === need) set |= 1 << m;
+  return set;
+});
+
+const liftCache = new Map<number, number>();
+/** Maps a set of op masks S to { m | bit : m ∈ S }. */
+function lift(set: number, bit: number): number {
+  const cacheKey = set * 16 + bit;
+  let out = liftCache.get(cacheKey);
+  if (out === undefined) {
+    out = 0;
+    for (let m = 0; m < 16; m++) if (set & (1 << m)) out |= 1 << (m | bit);
+    liftCache.set(cacheKey, out);
+  }
+  return out;
+}
+
+const coverCache = new Map<string, Uint16Array[]>();
 
 /**
- * reach[k][v] === 1 ⇔ from node v there is a walk of exactly k graph steps
- * followed by one final-plan step.
+ * cover[k][v] is the set (16-bit, one bit per op mask) of operation masks
+ * that a walk of exactly k graph steps followed by one final-plan step can
+ * use, starting at node v. cover[k][v] === 0 ⇔ no such walk exists.
+ * (Ignores the "no repeated fact" rule, so the DFS still backtracks.)
  */
-function reachTable(cacheKey: string, graph: Graph, plan: FinalPlan, k: number): Uint8Array[] {
-  let table = reachCache.get(cacheKey);
+function coverTable(cacheKey: string, graph: Graph, plan: FinalPlan, k: number): Uint16Array[] {
+  let table = coverCache.get(cacheKey);
   if (!table) {
-    const first = new Uint8Array(NODE_COUNT);
-    for (const left of plan.byLeft.keys()) first[left] = 1;
+    const first = new Uint16Array(NODE_COUNT);
+    for (const [left, facts] of plan.byLeft) for (const f of facts) first[left] |= 1 << f.bit;
     table = [first];
-    reachCache.set(cacheKey, table);
+    coverCache.set(cacheKey, table);
   }
   while (table.length <= k) {
     const prev = table[table.length - 1];
-    const next = new Uint8Array(NODE_COUNT);
+    const next = new Uint16Array(NODE_COUNT);
     for (let v = 0; v < NODE_COUNT; v++) {
-      for (const f of graph.out[v]) {
-        if (prev[f.to]) {
-          next[v] = 1;
-          break;
-        }
-      }
+      let set = 0;
+      for (const f of graph.out[v]) if (prev[f.to]) set |= lift(prev[f.to], f.bit);
+      next[v] = set;
     }
     table.push(next);
   }
@@ -297,78 +381,161 @@ function removeAt<T>(arr: T[], i: number): T {
   return item;
 }
 
+interface WalkOptions {
+  /** Every operation of the graph must appear at least once. */
+  requireAllOps: boolean;
+  /** 'loose': 9 + 1 and 1 + 9 count as the same fact; 'key': only exact repeats are blocked. */
+  usedKey: 'loose' | 'key';
+  /** Returning straight to the previous left operand (5 + 3 = 8 → 8 − 3 = 5): forbidden or merely avoided. */
+  nearUndo: 'block' | 'soft';
+  budget: number;
+}
+
+interface WalkResult {
+  path: Fact[] | null;
+  /** true when the search stopped because the budget ran out (a retry may succeed). */
+  outOfBudget: boolean;
+}
+
 /**
  * Builds a walk of exactly `length` facts whose last fact is from `plan`.
- * Facts never repeat and a step never immediately undoes the previous one
- * (5 × 2 = 10 → 10 ÷ 2 = 5). Returns null only if no such walk exists.
+ * Facts never repeat, a step never immediately undoes the previous one
+ * (5 × 2 = 10 → 10 ÷ 2 = 5), and with requireAllOps every graph operation is
+ * used. Soft preferences, in order: facts used least elsewhere in the puzzle
+ * (`usage`), no near-undo / commuted repeat, balanced operations, unvisited
+ * values, and few ±1 steps.
  */
 function chainedWalk(
   graph: Graph,
   plan: FinalPlan,
-  reach: Uint8Array[],
+  cover: Uint16Array[],
   length: number,
   rng: Rng,
-): Fact[] | null {
+  usage: FactUsage,
+  opts: WalkOptions,
+): WalkResult {
   const path: Fact[] = [];
   const used = new Set<string>();
+  const usedLoose = new Set<string>();
   const visits = new Uint8Array(NODE_COUNT);
   const opUse = new Map<Operation, number>();
-  let budget = SEARCH_BUDGET;
+  let allMask = 0;
+  for (const op of graph.byOp.keys()) allMask |= OP_BIT[op];
+  let budget = opts.budget;
 
-  const dfs = (v: number, stepIdx: number): boolean => {
+  const dfs = (v: number, stepIdx: number, mask: number): boolean => {
     if (--budget < 0) return false;
     const remaining = length - 1 - stepIdx;
     const prev = path[path.length - 1];
     const source = remaining === 0 ? (plan.byLeft.get(v) ?? []) : graph.out[v];
-    const nextReach = remaining === 0 ? null : reach[remaining - 1];
+    const nextCover = remaining === 0 ? null : cover[remaining - 1];
 
-    // Group candidates by op, unvisited targets first.
-    const fresh = new Map<Operation, Fact[]>();
-    const stale = new Map<Operation, Fact[]>();
+    // tier (lower is better) → op → [unvisited targets, visited targets]
+    const tiers = new Map<number, Map<Operation, [Fact[], Fact[]]>>();
     for (const f of source) {
-      if (nextReach && !nextReach[f.to]) continue;
-      if (used.has(f.key)) continue;
+      const reachable = nextCover ? nextCover[f.to] : 1;
+      if (!reachable) continue;
+      if (opts.requireAllOps) {
+        const need = allMask & ~(mask | f.bit);
+        if (nextCover ? !(reachable & SUPERSETS[need]) : need !== 0) continue;
+      }
+      if (used.has(opts.usedKey === 'loose' ? f.loose : f.key)) continue;
       if (prev && f.to === prev.left && f.right === prev.right && f.operator === INVERSE[prev.operator]) continue;
-      const bucket = visits[f.to] ? stale : fresh;
-      const list = bucket.get(f.operator);
-      if (list) list.push(f);
-      else bucket.set(f.operator, [f]);
+      const nearUndo = prev !== undefined && f.to === prev.left;
+      if (nearUndo && opts.nearUndo === 'block') continue;
+
+      const tier =
+        (usage.counts.get(f.loose) ?? 0) * 4 +
+        (nearUndo ? 2 : 0) +
+        (usedLoose.has(f.loose) ? 2 : 0) +
+        // ±1 steps only when the alternatives are worse (they stay possible).
+        (f.weight < 1 && rng() >= f.weight ? 1 : 0);
+      let byOp = tiers.get(tier);
+      if (!byOp) tiers.set(tier, (byOp = new Map()));
+      let lists = byOp.get(f.operator);
+      if (!lists) byOp.set(f.operator, (lists = [[], []]));
+      lists[visits[f.to] ? 1 : 0].push(f);
     }
 
-    const ops = OPERATIONS.filter((op) => fresh.has(op) || stale.has(op));
-    while (ops.length > 0) {
-      const op = pickOp(ops, opUse, rng);
-      const list = fresh.get(op)?.length ? fresh.get(op)! : stale.get(op);
-      if (!list || list.length === 0) {
-        ops.splice(ops.indexOf(op), 1);
-        continue;
-      }
-      const f = removeAt(list, randInt(0, list.length - 1, rng));
+    for (const tier of [...tiers.keys()].sort((a, b) => a - b)) {
+      const byOp = tiers.get(tier)!;
+      const ops = OPERATIONS.filter((op) => byOp.has(op));
+      while (ops.length > 0) {
+        const op = pickOp(ops, opUse, rng);
+        const [fresh, stale] = byOp.get(op)!;
+        const list = fresh.length > 0 ? fresh : stale;
+        if (list.length === 0) {
+          ops.splice(ops.indexOf(op), 1);
+          continue;
+        }
+        const f = removeAt(list, pickWeightedIndex(list, rng));
 
-      used.add(f.key);
-      path.push(f);
-      opUse.set(op, (opUse.get(op) ?? 0) + 1);
-      visits[f.to]++;
-      if (remaining === 0 || dfs(f.to, stepIdx + 1)) return true;
-      visits[f.to]--;
-      opUse.set(op, opUse.get(op)! - 1);
-      path.pop();
-      used.delete(f.key);
-      if (budget < 0) return false;
+        used.add(opts.usedKey === 'loose' ? f.loose : f.key);
+        const newLoose = !usedLoose.has(f.loose);
+        if (newLoose) usedLoose.add(f.loose);
+        path.push(f);
+        opUse.set(op, (opUse.get(op) ?? 0) + 1);
+        visits[f.to]++;
+        if (remaining === 0 ? !usage.taken.has(stepsSignature(path)) : dfs(f.to, stepIdx + 1, mask | f.bit)) {
+          return true;
+        }
+        visits[f.to]--;
+        opUse.set(op, opUse.get(op)! - 1);
+        path.pop();
+        if (newLoose) usedLoose.delete(f.loose);
+        used.delete(opts.usedKey === 'loose' ? f.loose : f.key);
+        if (budget < 0) return false;
+      }
     }
     return false;
   };
 
   const starts: number[] = [];
-  for (let v = 0; v < NODE_COUNT; v++) if (reach[length - 1][v]) starts.push(v);
+  const startNeed = opts.requireAllOps ? SUPERSETS[allMask] : 0xffff;
+  for (let v = 0; v < NODE_COUNT; v++) if (cover[length - 1][v] & startNeed) starts.push(v);
   shuffle(starts, rng);
   for (const start of starts) {
     visits[start] = 1;
-    if (dfs(start, 0)) return path;
+    if (dfs(start, 0, 0)) return { path, outOfBudget: false };
     visits[start] = 0;
-    if (budget < 0) return null;
+    if (budget < 0) return { path: null, outOfBudget: true };
+  }
+  return { path: null, outOfBudget: false };
+}
+
+/**
+ * Runs the walk with progressively looser rules. Each pass is retried when it
+ * only ran out of budget; a pass whose search space is exhausted moves on.
+ */
+function walkWithFallbacks(
+  graph: Graph,
+  plan: FinalPlan,
+  cover: Uint16Array[],
+  length: number,
+  rng: Rng,
+  usage: FactUsage,
+  passes: WalkOptions[],
+): Fact[] | null {
+  for (const opts of passes) {
+    for (let attempt = 0; attempt < WALK_ATTEMPTS; attempt++) {
+      const { path, outOfBudget } = chainedWalk(graph, plan, cover, length, rng, usage, opts);
+      if (path) return path;
+      if (!outOfBudget) break;
+    }
   }
   return null;
+}
+
+const CHAINED_PASSES: WalkOptions[] = [
+  { requireAllOps: true, usedKey: 'loose', nearUndo: 'block', budget: COVERAGE_BUDGET },
+  { requireAllOps: false, usedKey: 'loose', nearUndo: 'block', budget: SEARCH_BUDGET },
+  // Last resort, the original rules (never needed for the standard lengths).
+  { requireAllOps: false, usedKey: 'key', nearUndo: 'soft', budget: SEARCH_BUDGET },
+];
+
+/** Exact identity of a chain (two chains with equal signatures are identical). */
+function stepsSignature(steps: MathStep[]): string {
+  return steps.map((s) => `${s.left}${s.operator}${s.right}`).join(',');
 }
 
 function toSteps(facts: Fact[]): MathStep[] {
@@ -381,14 +548,15 @@ function generateChainedChain(
   ops: Operation[],
   length: number,
   rng: Rng,
+  usage: FactUsage,
 ): PuzzleChain {
   const graph = getGraph(difficulty, ops);
   const plans = finalPlans(targetDigit, difficulty, ops);
   for (let p = 0; p < plans.length; p++) {
     const plan = plans[p];
-    const reach = reachTable(`${difficulty}|${ops.join('')}|${targetDigit}|${p}`, graph, plan, length - 1);
-    if (!reach[length - 1].some(Boolean)) continue;
-    const facts = chainedWalk(graph, plan, reach, length, rng);
+    const cover = coverTable(`${difficulty}|${ops.join('')}|${targetDigit}|${p}`, graph, plan, length - 1);
+    if (!cover[length - 1].some(Boolean)) continue;
+    const facts = walkWithFallbacks(graph, plan, cover, length, rng, usage, CHAINED_PASSES);
     if (!facts) continue;
     return { targetDigit, steps: toSteps(facts), useLastDigit: plan.useLastDigit, chainMode: 'full' };
   }
@@ -399,20 +567,13 @@ function generateChainedChain(
 // Independent facts (monotone operation sets)
 // ---------------------------------------------------------------------------
 
-/** Order-insensitive key for commutative facts, so 3 + 4 and 4 + 3 count once. */
-function looseKey(f: MathStep): string {
-  if (f.operator === '+' || f.operator === '*') {
-    return `${Math.min(f.left, f.right)}${f.operator}${Math.max(f.left, f.right)}`;
-  }
-  return `${f.left}${f.operator}${f.right}`;
-}
-
 function generateIndependentChain(
   targetDigit: number,
   difficulty: Difficulty,
   ops: Operation[],
   length: number,
   rng: Rng,
+  usage: FactUsage,
 ): PuzzleChain {
   const graph = getGraph(difficulty, ops);
   const plan = finalPlans(targetDigit, difficulty, ops)[0];
@@ -422,17 +583,23 @@ function generateIndependentChain(
 
   const choose = (byOp: Map<Operation, Fact[]>, acceptable: (f: Fact) => boolean): Fact => {
     const ops = [...byOp.keys()];
-    for (let attempt = 0; attempt < 40; attempt++) {
+    // Prefer facts not used elsewhere in the puzzle and not ±1, then relax.
+    for (let attempt = 0; attempt < 80; attempt++) {
       const f = pick(byOp.get(pickOp(ops, opUse, rng))!, rng);
-      if (acceptable(f)) return f;
+      if (!acceptable(f)) continue;
+      if (attempt < 40 && usage.counts.has(f.loose)) continue;
+      if (f.weight < 1 && rng() >= f.weight) continue;
+      return f;
     }
     const all = [...byOp.values()].flat().filter(acceptable);
     if (all.length === 0) throw new Error('Impossible: ran out of distinct facts');
-    return pick(all, rng);
+    const fresh = all.filter((f) => !usage.counts.has(f.loose));
+    const pool = fresh.length > 0 ? fresh : all;
+    return pool[pickWeightedIndex(pool, rng)];
   };
 
   const take = (f: Fact): void => {
-    used.add(looseKey(f));
+    used.add(f.loose);
     opUse.set(f.operator, (opUse.get(f.operator) ?? 0) + 1);
   };
 
@@ -450,7 +617,7 @@ function generateIndependentChain(
     const prev = steps[steps.length - 1];
     const isLastBeforeFinal = i === length - 2;
     const f = choose(graph.byOp, (f) =>
-      !used.has(looseKey(f)) &&
+      !used.has(f.loose) &&
       // Never accidentally look chained (print would blank the left operand).
       (!prev || f.left !== prev.result) &&
       (!isLastBeforeFinal || f.result !== finalFact.left),
@@ -461,6 +628,38 @@ function generateIndependentChain(
   steps.push(finalFact);
 
   return { targetDigit, steps: toSteps(steps), useLastDigit: plan.useLastDigit, chainMode: 'independent' };
+}
+
+// ---------------------------------------------------------------------------
+// Puzzle-level variety
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds the chains of one puzzle in order. Each chain prefers facts the
+ * earlier chains have not used (soft), and no two chains are identical (hard:
+ * walks reject a taken signature at the leaf and backtrack; anything else
+ * identical is re-rolled).
+ */
+function buildChains(
+  count: number,
+  make: (index: number, usage: FactUsage) => PuzzleChain,
+): PuzzleChain[] {
+  const usage = newUsage();
+  const chains: PuzzleChain[] = [];
+  for (let i = 0; i < count; i++) {
+    let chain = make(i, usage);
+    for (let attempt = 1; usage.taken.has(stepsSignature(chain.steps)); attempt++) {
+      if (attempt >= DISTINCT_CHAIN_ATTEMPTS) throw new Error('Impossible: could not build distinct chains');
+      chain = make(i, usage);
+    }
+    usage.taken.add(stepsSignature(chain.steps));
+    for (const s of chain.steps) {
+      const k = looseKey(s);
+      usage.counts.set(k, (usage.counts.get(k) ?? 0) + 1);
+    }
+    chains.push(chain);
+  }
+  return chains;
 }
 
 // ---------------------------------------------------------------------------
@@ -478,6 +677,26 @@ export function getChainStrategy(operations: Operation[]): ChainStrategy {
   return up && down ? 'chained' : 'independent';
 }
 
+function generateChainWithUsage(
+  targetDigit: number,
+  difficulty: Difficulty,
+  operations: Operation[],
+  chainLengthOverride: { min: number; max: number } | undefined,
+  rng: Rng,
+  usage: FactUsage,
+): PuzzleChain {
+  assertDigit(targetDigit);
+  assertDifficulty(difficulty);
+  const ops = normalizeOps(operations);
+  const lengths = chainLengthOverride ?? CHAIN_LENGTH;
+  assertLength(lengths);
+  const length = randInt(lengths.min, lengths.max, rng);
+
+  return getChainStrategy(ops) === 'chained'
+    ? generateChainedChain(targetDigit, difficulty, ops, length, rng, usage)
+    : generateIndependentChain(targetDigit, difficulty, ops, length, rng, usage);
+}
+
 /**
  * Generate one chain whose final step encodes `targetDigit` (exactly, or by
  * the ones digit of the last result when `useLastDigit` is true).
@@ -489,16 +708,7 @@ export function generateChain(
   chainLengthOverride?: { min: number; max: number },
   rng: Rng = Math.random,
 ): PuzzleChain {
-  assertDigit(targetDigit);
-  assertDifficulty(difficulty);
-  const ops = normalizeOps(operations);
-  const lengths = chainLengthOverride ?? CHAIN_LENGTH;
-  assertLength(lengths);
-  const length = randInt(lengths.min, lengths.max, rng);
-
-  return getChainStrategy(ops) === 'chained'
-    ? generateChainedChain(targetDigit, difficulty, ops, length, rng)
-    : generateIndependentChain(targetDigit, difficulty, ops, length, rng);
+  return generateChainWithUsage(targetDigit, difficulty, operations, chainLengthOverride, rng, newUsage());
 }
 
 export function generatePuzzle(
@@ -509,7 +719,9 @@ export function generatePuzzle(
 ): Puzzle {
   assertPin(pin);
   normalizeOps(operations);
-  const chains = pin.split('').map((d) => generateChain(Number(d), difficulty, operations, undefined, rng));
+  const chains = buildChains(4, (i, usage) =>
+    generateChainWithUsage(Number(pin[i]), difficulty, operations, undefined, rng, usage),
+  );
   return { pin, chains };
 }
 
@@ -549,15 +761,14 @@ function getOnesGraph(): Graph {
 }
 
 /**
- * Chained multiplication facts: the ONES DIGIT of each result is the left
- * operand of the next step, and the ones digit of the last result is the PIN
- * digit. Example for 7:  4 × 8 = 32 → 2 × 6 = 12 → 2 × 9 = 18 → … → 9 × 3 = 27.
- *
- * Built forwards over a reachability table, so it cannot dead-end; no fact
- * repeats. Parity makes odd targets (1, 3, 5, 7, 9) use only the six odd facts
- * among 3, 7, 9, so those chains are capped at 6–7 steps.
+ * Ones-digit walks keep exact keys (3 × 9 and 9 × 3 may both appear, as
+ * different carries) but avoid near-undo and commuted repeats when they can.
  */
-export function generateMultiplicationPinChain(targetDigit: number, rng: Rng = Math.random): PuzzleChain {
+const ONES_PASSES: WalkOptions[] = [
+  { requireAllOps: false, usedKey: 'key', nearUndo: 'soft', budget: SEARCH_BUDGET },
+];
+
+function onesDigitChain(targetDigit: number, rng: Rng, usage: FactUsage): PuzzleChain {
   assertDigit(targetDigit);
   const graph = getOnesGraph();
   const finals: Fact[] = [];
@@ -569,17 +780,37 @@ export function generateMultiplicationPinChain(targetDigit: number, rng: Rng = M
   const plan = makePlan(finals, true);
   const { min, max } = MULTIPLICATION_PIN_CHAIN_LENGTH;
   for (let length = randInt(min, max, rng); length >= 2; length--) {
-    const reach = reachTable(`ones|${targetDigit}`, graph, plan, length - 1);
-    if (!reach[length - 1].some(Boolean)) continue;
-    const facts = chainedWalk(graph, plan, reach, length, rng);
+    const cover = coverTable(`ones|${targetDigit}`, graph, plan, length - 1);
+    if (!cover[length - 1].some(Boolean)) continue;
+    const facts = walkWithFallbacks(graph, plan, cover, length, rng, usage, ONES_PASSES);
     if (facts) return { targetDigit, steps: toSteps(facts), useLastDigit: true, chainMode: 'onesDigit' };
   }
   throw new Error(`Impossible: no ones-digit chain to ${targetDigit}`);
 }
 
+/**
+ * Chained multiplication facts: the ONES DIGIT of each result is the left
+ * operand of the next step, and the ones digit of the last result is the PIN
+ * digit. Example for 7:  4 × 8 = 32 → 2 × 6 = 12 → 2 × 9 = 18 → … → 9 × 3 = 27.
+ *
+ * Built forwards over a reachability table, so it cannot dead-end; no fact
+ * repeats.
+ *
+ * Parity limits odd targets (1, 3, 5, 7, 9): the last product must be
+ * odd × odd, and an even carried digit can never become odd again (even ×
+ * anything is even), so EVERY carried digit of an odd-target chain is odd,
+ * i.e. one of 3, 7, 9 (1 and 5 are excluded). That leaves 6 non-final facts
+ * (3×3, 3×9, 7×7, 7×9, 9×3, 9×7), so odd chains are at most 7 steps and
+ * several odd chains in one puzzle must share facts; the puzzle-level usage
+ * counts spread that sharing as evenly as possible.
+ */
+export function generateMultiplicationPinChain(targetDigit: number, rng: Rng = Math.random): PuzzleChain {
+  return onesDigitChain(targetDigit, rng, newUsage());
+}
+
 export function generateMultiplicationPinPuzzle(pin: string, rng: Rng = Math.random): Puzzle {
   assertPin(pin);
-  const chains = pin.split('').map((d) => generateMultiplicationPinChain(Number(d), rng));
+  const chains = buildChains(4, (i, usage) => onesDigitChain(Number(pin[i]), rng, usage));
   return { pin, chains };
 }
 
@@ -631,11 +862,11 @@ export function generateMetaPuzzle(
   const meta = generateMetaGrid(pin, rng);
   const chainLen = META_CHAIN_LENGTH_BY_DIFFICULTY[difficulty];
 
-  const chains: PuzzleChain[] = [];
-  for (const coord of meta.coordinates) {
-    chains.push(generateChain(coord.row, difficulty, operations, chainLen, rng));
-    chains.push(generateChain(coord.col, difficulty, operations, chainLen, rng));
-  }
+  // Chain 2i encodes coordinate i's row, chain 2i + 1 its column.
+  const digits = meta.coordinates.flatMap((coord) => [coord.row, coord.col]);
+  const chains = buildChains(digits.length, (i, usage) =>
+    generateChainWithUsage(digits[i], difficulty, operations, chainLen, rng, usage),
+  );
 
   return { pin, chains, meta };
 }
