@@ -106,7 +106,7 @@ GitHub Actions (`.github/workflows/ci.yml`) na svaki push/PR ka `main` pokreće:
 - **Tailwind CSS 4** — stilizovanje
 - **Zustand 5** — upravljanje stanjem (sessionStorage)
 - **Vitest 5** + Testing Library — testovi
-- **ESLint 9** (typescript-eslint, react-hooks, jsx-a11y) — linting
+- **ESLint 10** (typescript-eslint, react-hooks, jsx-a11y) — linting
 - **Bun** — package manager i runtime
 - **TypeScript 6** (strict) — type safety
 

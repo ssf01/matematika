@@ -5,9 +5,8 @@ import jsxA11y from 'eslint-plugin-jsx-a11y';
 import globals from 'globals';
 import { defineConfig, globalIgnores } from 'eslint/config';
 
-// Pinned to ESLint 9: eslint-plugin-jsx-a11y (latest 6.10.2) only declares
-// peer support up to ESLint 9. Move to ESLint 10 (and @eslint/js 10,
-// optionally eslint-plugin-astro 3) once jsx-a11y supports it.
+// ESLint 10: eslint-plugin-jsx-a11y 6.10.2 only *declares* peer support up to
+// ESLint 9, but its rules run correctly on 10 (verified: jsx-a11y/alt-text fires).
 
 export default defineConfig([
   globalIgnores(['dist/', '.astro/', 'node_modules/', 'coverage/', '.claude/']),
