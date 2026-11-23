@@ -43,6 +43,7 @@ Aplikacija radi u browseru, može da se **instalira kao aplikacija** (PWA) i **r
 ### Preduslovi
 
 - [Bun](https://bun.sh/) 1.4+ (CI koristi tačno verziju iz `packageManager` u `package.json`)
+- [Node.js](https://nodejs.org/) 22.23.4+ (Astro 7 CLI radi na Node-u; CI i Cloudflare Pages koriste verziju iz `.node-version`)
 
 ### Instalacija i pokretanje
 
@@ -96,10 +97,11 @@ GitHub Actions (`.github/workflows/ci.yml`) na svaki push/PR ka `main` pokreće:
 2. Build command: `bun run build`
 3. Build output directory: `dist`
 4. Framework preset: Astro
+5. Node verzija se čita iz `.node-version` (Astro 7 zahteva Node 22.23.4+)
 
 ## Tech stack
 
-- **Astro 5** — statički sajt generator
+- **Astro 7** — statički sajt generator
 - **React 19** — interaktivne komponente (islands)
 - **Tailwind CSS 4** — stilizovanje
 - **Zustand 5** — upravljanje stanjem (sessionStorage)
