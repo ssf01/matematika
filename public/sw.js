@@ -9,7 +9,7 @@
  * never intercepted or cached):
  *   - HTML / navigations: network-first, fall back to cache (offline)
  *   - /_astro/* (hashed, immutable): cache-first
- *   - other same-origin files: stale-while-revalidate
+ *   - other precached same-origin files: stale-while-revalidate (unknown URLs: network only)
  */
 // Without a build-time manifest (e.g. raw public/sw.js served by `astro dev`)
 // this worker must not cache anything: unregister and bail out.
@@ -105,7 +105,8 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(networkFirst(request));
   } else if (url.pathname.startsWith('/_astro/')) {
     event.respondWith(cacheFirst(request));
-  } else if (url.pathname !== '/sw.js') {
+  } else if (PRECACHE.includes(url.pathname)) {
+    // only known build assets; anything else (e.g. dev-server modules) goes straight to network
     event.respondWith(staleWhileRevalidate(request, event));
   }
 });

@@ -76,6 +76,11 @@ const themeColor = '#030712'; // tailwind gray-950, matches body background
             navigator.serviceWorker.getRegistrations().then(function (rs) {
               rs.forEach(function (r) { r.unregister(); });
             });
+            if (window.caches) {
+              caches.keys().then(function (ks) {
+                ks.filter(function (k) { return k.indexOf('matematika-') === 0; }).forEach(function (k) { caches.delete(k); });
+              });
+            }
           }
         </script>
       )
